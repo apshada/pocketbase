@@ -1,30 +1,50 @@
 <script>
-    import { link } from "svelte-spa-router";
-    import CommonHelper from "@/utils/CommonHelper";
-    import { hideControls } from "@/stores/app";
-    import { collections, activeCollection } from "@/stores/collections";
+    import PageSidebar from "@/components/base/PageSidebar.svelte";
+    import CollectionSidebarItem from "@/components/collections/CollectionSidebarItem.svelte";
     import CollectionUpsertPanel from "@/components/collections/CollectionUpsertPanel.svelte";
+    import { hideControls } from "@/stores/app";
+    import { activeCollection, collections, isCollectionsLoading } from "@/stores/collections";
+
+    const pinnedStorageKey = "@pinnedCollections";
 
     let collectionPanel;
     let searchTerm = "";
+    let pinnedIds = [];
+    let showSystemSection = false;
+    let oldCollectionId;
+
+    loadPinned();
+
+    $: if ($collections) {
+        syncPinned();
+        scrollIntoView();
+    }
 
     $: normalizedSearch = searchTerm.replace(/\s+/g, "").toLowerCase();
 
     $: hasSearch = searchTerm !== "";
 
-    $: filteredCollections = $collections.filter((collection) => {
-        return (
-            collection.id == searchTerm ||
-            collection.name.replace(/\s+/g, "").toLowerCase().includes(normalizedSearch)
-        );
-    });
-
-    $: if ($collections) {
-        scrollIntoView();
+    $: if (pinnedIds) {
+        localStorage.setItem(pinnedStorageKey, JSON.stringify(pinnedIds));
     }
 
-    function selectCollection(collection) {
-        $activeCollection = collection;
+    $: filtered = $collections.filter((c) => {
+        return c.id == searchTerm || c.name?.replace(/\s+/g, "")?.toLowerCase()?.includes(normalizedSearch);
+    });
+
+    $: pinnedCollections = filtered.filter((c) => pinnedIds.includes(c.id));
+
+    $: unpinnedRegularCollections = filtered.filter((c) => !c.system && !pinnedIds.includes(c.id));
+
+    $: unpinnedSystemCollections = filtered.filter((c) => c.system && !pinnedIds.includes(c.id));
+
+    $: if ($activeCollection?.id && oldCollectionId != $activeCollection.id) {
+        oldCollectionId = $activeCollection.id;
+        if ($activeCollection.system && !pinnedCollections.find((c) => c.id == $activeCollection.id)) {
+            showSystemSection = true;
+        } else {
+            showSystemSection = false;
+        }
     }
 
     function scrollIntoView() {
@@ -35,44 +55,97 @@
             }
         }, 0);
     }
+
+    function loadPinned() {
+        pinnedIds = [];
+
+        try {
+            const encoded = localStorage.getItem(pinnedStorageKey);
+            if (encoded) {
+                pinnedIds = JSON.parse(encoded) || [];
+            }
+        } catch (_) {}
+    }
+
+    function syncPinned() {
+        pinnedIds = pinnedIds.filter((id) => !!$collections.find((c) => c.id == id));
+    }
 </script>
 
-<aside class="page-sidebar collection-sidebar">
+<PageSidebar class="collection-sidebar">
     <header class="sidebar-header">
         <div class="form-field search" class:active={hasSearch}>
             <div class="form-field-addon">
                 <button
                     type="button"
-                    class="btn btn-xs btn-secondary btn-circle btn-clear"
+                    class="btn btn-xs btn-transparent btn-circle btn-clear"
                     class:hidden={!hasSearch}
                     on:click={() => (searchTerm = "")}
                 >
                     <i class="ri-close-line" />
                 </button>
             </div>
-            <input type="text" placeholder="Search collections..." bind:value={searchTerm} />
+            <input
+                type="text"
+                placeholder="Search collections..."
+                name="collections-search"
+                bind:value={searchTerm}
+            />
         </div>
     </header>
 
     <hr class="m-t-5 m-b-xs" />
 
-    <div class="sidebar-content" class:sidebar-content-compact={filteredCollections.length > 20}>
-        {#each filteredCollections as collection (collection.id)}
-            <a
-                href="/collections?collectionId={collection.id}"
-                class="sidebar-list-item"
-                class:active={$activeCollection?.id === collection.id}
-                use:link
-            >
-                <i class={CommonHelper.getCollectionTypeIcon(collection.type)} />
+    <div
+        class="sidebar-content"
+        class:fade={$isCollectionsLoading}
+        class:sidebar-content-compact={filtered.length > 20}
+    >
+        {#if pinnedCollections.length}
+            <div class="sidebar-title">Pinned</div>
+            {#each pinnedCollections as collection (collection.id)}
+                <CollectionSidebarItem {collection} bind:pinnedIds />
+            {/each}
+        {/if}
 
-                <span class="txt">{collection.name}</span>
-            </a>
-        {:else}
-            {#if normalizedSearch.length}
-                <p class="txt-hint m-t-10 m-b-10 txt-center">No collections found.</p>
+        {#if unpinnedRegularCollections.length}
+            {#if pinnedCollections.length}
+                <div class="sidebar-title">Others</div>
             {/if}
-        {/each}
+            {#each unpinnedRegularCollections as collection (collection.id)}
+                <CollectionSidebarItem {collection} bind:pinnedIds />
+            {/each}
+        {/if}
+
+        {#if unpinnedSystemCollections.length}
+            <button
+                type="button"
+                class="sidebar-title m-b-xs"
+                class:link-hint={!normalizedSearch.length}
+                aria-label={showSystemSection ? "Expand system collections" : "Collapse system collections"}
+                aria-expanded={showSystemSection || normalizedSearch.length}
+                disabled={normalizedSearch.length}
+                on:click={() => {
+                    if (!normalizedSearch.length) {
+                        showSystemSection = !showSystemSection;
+                    }
+                }}
+            >
+                <span class="txt">System</span>
+                {#if !normalizedSearch.length}
+                    <i class="ri-arrow-{showSystemSection ? 'up' : 'down'}-s-line" aria-hidden="true" />
+                {/if}
+            </button>
+            {#if showSystemSection || normalizedSearch.length}
+                {#each unpinnedSystemCollections as collection (collection.id)}
+                    <CollectionSidebarItem {collection} bind:pinnedIds />
+                {/each}
+            {/if}
+        {/if}
+
+        {#if normalizedSearch.length && !filtered.length}
+            <p class="txt-hint m-t-10 m-b-10 txt-center">No collections found.</p>
+        {/if}
     </div>
 
     {#if !$hideControls}
@@ -83,13 +156,6 @@
             </button>
         </footer>
     {/if}
-</aside>
+</PageSidebar>
 
-<CollectionUpsertPanel
-    bind:this={collectionPanel}
-    on:save={(e) => {
-        if (e.detail?.isNew && e.detail.collection) {
-            selectCollection(e.detail.collection);
-        }
-    }}
-/>
+<CollectionUpsertPanel bind:this={collectionPanel} />

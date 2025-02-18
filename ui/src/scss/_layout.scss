@@ -98,10 +98,13 @@
 .page-sidebar {
     --sidebarListItemMargin: 10px;
 
+    position: relative;
     z-index: 0;
     display: flex;
     flex-direction: column;
     width: var(--pageSidebarWidth);
+    min-width: var(--pageSidebarWidth);
+    max-width: 400px;
     flex-shrink: 0;
     flex-grow: 0;
     overflow-x: hidden;
@@ -110,7 +113,7 @@
     padding: calc(var(--baseSpacing) - 5px) 0 var(--smSpacing);
     border-right: 1px solid var(--baseAlt2Color);
     & > * {
-        padding: 0 var(--smSpacing);
+        padding: 0 var(--xsSpacing);
     }
     .sidebar-content {
         overflow-x: hidden;
@@ -160,7 +163,7 @@
         align-items: center;
         gap: 5px;
         width: 100%;
-        margin: var(--baseSpacing) 0 var(--xsSpacing);
+        margin: var(--baseSpacing) 5px var(--xsSpacing);
         font-weight: 600;
         font-size: 1rem;
         line-height: var(--smLineHeight);
@@ -219,7 +222,7 @@
         --sidebarListItemMargin: 5px;
     }
     @media screen and (max-width: 1100px) {
-        --pageSidebarWidth: 190px;
+        min-width: 200px;
         & > * {
             padding-left: 10px;
             padding-right: 10px;
@@ -229,6 +232,7 @@
 
 .page-header {
     display: flex;
+    flex-shrink: 0;
     align-items: center;
     width: 100%;
     min-height: var(--btnHeight);
@@ -303,10 +307,11 @@
 
 .page-content {
     position: relative;
+    z-index: 0;
     display: block;
     width: 100%;
     flex-grow: 1;
-    padding: calc(var(--baseSpacing) - 5px) var(--baseSpacing);
+    padding: calc(var(--baseSpacing) - 5px) var(--baseSpacing) var(--smSpacing);
 }
 
 .page-footer {
@@ -314,8 +319,7 @@
     gap: 5px;
     align-items: center;
     justify-content: right;
-    text-align: right;
-    padding: 0px var(--baseSpacing) 15px;
+    padding: 0px var(--baseSpacing) var(--smSpacing);
     color: var(--txtDisabledColor);
     font-size: var(--xsFontSize);
     line-height: var(--smLineHeight);
@@ -340,18 +344,28 @@
     flex-grow: 1;
     width: 100%;
     overflow-x: hidden;
-    overflow-y: auto; // fallback
-    overflow-y: overlay;
+    overflow-y: auto;
+    scroll-behavior: smooth;
+    scrollbar-gutter: stable;
     .overlay-active & {
         overflow-y: hidden; // prevent double scrollbar
     }
     &.full-page {
+        scrollbar-gutter: auto;
         background: var(--baseColor);
     }
     &.center-content {
         .page-content {
             display: flex;
             align-items: center;
+        }
+    }
+    &.flex-content {
+        scrollbar-gutter: auto;
+        .page-content {
+            display: flex;
+            min-height: 0;
+            flex-direction: column;
         }
     }
 }

@@ -1,100 +1,117 @@
 package apis_test
 
 import (
+	"errors"
 	"net/http"
 	"os"
 	"path/filepath"
 	"strings"
 	"testing"
+	"time"
 
-	"github.com/labstack/echo/v5"
-	"github.com/pocketbase/pocketbase/models"
+	"github.com/pocketbase/pocketbase/core"
 	"github.com/pocketbase/pocketbase/tests"
+	"github.com/pocketbase/pocketbase/tools/list"
 )
 
 func TestCollectionsList(t *testing.T) {
+	t.Parallel()
+
 	scenarios := []tests.ApiScenario{
 		{
 			Name:            "unauthorized",
 			Method:          http.MethodGet,
-			Url:             "/api/collections",
+			URL:             "/api/collections",
 			ExpectedStatus:  401,
 			ExpectedContent: []string{`"data":{}`},
+			ExpectedEvents:  map[string]int{"*": 0},
 		},
 		{
-			Name:   "authorized as user",
+			Name:   "authorized as regular user",
 			Method: http.MethodGet,
-			Url:    "/api/collections",
-			RequestHeaders: map[string]string{
-				"Authorization": "eyJhbGciOiJIUzI1NiJ9.eyJpZCI6IjRxMXhsY2xtZmxva3UzMyIsInR5cGUiOiJhdXRoUmVjb3JkIiwiY29sbGVjdGlvbklkIjoiX3BiX3VzZXJzX2F1dGhfIiwiZXhwIjoyMjA4OTg1MjYxfQ.UwD8JvkbQtXpymT09d7J6fdA0aP9g4FJ1GPh_ggEkzc",
+			URL:    "/api/collections",
+			Headers: map[string]string{
+				"Authorization": "eyJhbGciOiJIUzI1NiJ9.eyJpZCI6IjRxMXhsY2xtZmxva3UzMyIsInR5cGUiOiJhdXRoIiwiY29sbGVjdGlvbklkIjoiX3BiX3VzZXJzX2F1dGhfIiwiZXhwIjoyNTI0NjA0NDYxLCJyZWZyZXNoYWJsZSI6dHJ1ZX0.ZT3F0Z3iM-xbGgSG3LEKiEzHrPHr8t8IuHLZGGNuxLo",
 			},
-			ExpectedStatus:  401,
+			ExpectedStatus:  403,
 			ExpectedContent: []string{`"data":{}`},
+			ExpectedEvents:  map[string]int{"*": 0},
 		},
 		{
-			Name:   "authorized as admin",
+			Name:   "authorized as superuser",
 			Method: http.MethodGet,
-			Url:    "/api/collections",
-			RequestHeaders: map[string]string{
-				"Authorization": "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpZCI6InN5d2JoZWNuaDQ2cmhtMCIsInR5cGUiOiJhZG1pbiIsImV4cCI6MjIwODk4NTI2MX0.M1m--VOqGyv0d23eeUc0r9xE8ZzHaYVmVFw1VZW6gT8",
+			URL:    "/api/collections",
+			Headers: map[string]string{
+				"Authorization": "eyJhbGciOiJIUzI1NiJ9.eyJpZCI6InN5d2JoZWNuaDQ2cmhtMCIsInR5cGUiOiJhdXRoIiwiY29sbGVjdGlvbklkIjoicGJjXzMxNDI2MzU4MjMiLCJleHAiOjI1MjQ2MDQ0NjEsInJlZnJlc2hhYmxlIjp0cnVlfQ.UXgO3j-0BumcugrFjbd7j0M4MQvbrLggLlcu_YNGjoY",
 			},
 			ExpectedStatus: 200,
 			ExpectedContent: []string{
 				`"page":1`,
 				`"perPage":30`,
-				`"totalItems":8`,
+				`"totalItems":16`,
 				`"items":[{`,
-				`"id":"_pb_users_auth_"`,
-				`"id":"v851q4r790rhknl"`,
-				`"id":"kpv709sk2lqbqk8"`,
-				`"id":"wsmn24bux7wo113"`,
-				`"id":"sz5l5z67tg7gku0"`,
-				`"id":"wzlqyes4orhoygb"`,
-				`"id":"4d1blo5cuycfaca"`,
-				`"id":"9n89pl5vkct6330"`,
+				`"name":"` + core.CollectionNameSuperusers + `"`,
+				`"name":"` + core.CollectionNameAuthOrigins + `"`,
+				`"name":"` + core.CollectionNameExternalAuths + `"`,
+				`"name":"` + core.CollectionNameMFAs + `"`,
+				`"name":"` + core.CollectionNameOTPs + `"`,
+				`"name":"users"`,
+				`"name":"nologin"`,
+				`"name":"clients"`,
+				`"name":"demo1"`,
+				`"name":"demo2"`,
+				`"name":"demo3"`,
+				`"name":"demo4"`,
+				`"name":"demo5"`,
+				`"name":"numeric_id_view"`,
+				`"name":"view1"`,
+				`"name":"view2"`,
 				`"type":"auth"`,
 				`"type":"base"`,
+				`"type":"view"`,
 			},
 			ExpectedEvents: map[string]int{
+				"*":                        0,
 				"OnCollectionsListRequest": 1,
 			},
 		},
 		{
-			Name:   "authorized as admin + paging and sorting",
+			Name:   "authorized as superuser + paging and sorting",
 			Method: http.MethodGet,
-			Url:    "/api/collections?page=2&perPage=2&sort=-created",
-			RequestHeaders: map[string]string{
-				"Authorization": "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpZCI6InN5d2JoZWNuaDQ2cmhtMCIsInR5cGUiOiJhZG1pbiIsImV4cCI6MjIwODk4NTI2MX0.M1m--VOqGyv0d23eeUc0r9xE8ZzHaYVmVFw1VZW6gT8",
+			URL:    "/api/collections?page=2&perPage=2&sort=-created",
+			Headers: map[string]string{
+				"Authorization": "eyJhbGciOiJIUzI1NiJ9.eyJpZCI6InN5d2JoZWNuaDQ2cmhtMCIsInR5cGUiOiJhdXRoIiwiY29sbGVjdGlvbklkIjoicGJjXzMxNDI2MzU4MjMiLCJleHAiOjI1MjQ2MDQ0NjEsInJlZnJlc2hhYmxlIjp0cnVlfQ.UXgO3j-0BumcugrFjbd7j0M4MQvbrLggLlcu_YNGjoY",
 			},
 			ExpectedStatus: 200,
 			ExpectedContent: []string{
 				`"page":2`,
 				`"perPage":2`,
-				`"totalItems":8`,
+				`"totalItems":16`,
 				`"items":[{`,
-				`"id":"v851q4r790rhknl"`,
-				`"id":"4d1blo5cuycfaca"`,
+				`"name":"` + core.CollectionNameMFAs + `"`,
 			},
 			ExpectedEvents: map[string]int{
+				"*":                        0,
 				"OnCollectionsListRequest": 1,
 			},
 		},
 		{
-			Name:   "authorized as admin + invalid filter",
+			Name:   "authorized as superuser + invalid filter",
 			Method: http.MethodGet,
-			Url:    "/api/collections?filter=invalidfield~'demo2'",
-			RequestHeaders: map[string]string{
-				"Authorization": "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpZCI6InN5d2JoZWNuaDQ2cmhtMCIsInR5cGUiOiJhZG1pbiIsImV4cCI6MjIwODk4NTI2MX0.M1m--VOqGyv0d23eeUc0r9xE8ZzHaYVmVFw1VZW6gT8",
+			URL:    "/api/collections?filter=invalidfield~'demo2'",
+			Headers: map[string]string{
+				"Authorization": "eyJhbGciOiJIUzI1NiJ9.eyJpZCI6InN5d2JoZWNuaDQ2cmhtMCIsInR5cGUiOiJhdXRoIiwiY29sbGVjdGlvbklkIjoicGJjXzMxNDI2MzU4MjMiLCJleHAiOjI1MjQ2MDQ0NjEsInJlZnJlc2hhYmxlIjp0cnVlfQ.UXgO3j-0BumcugrFjbd7j0M4MQvbrLggLlcu_YNGjoY",
 			},
 			ExpectedStatus:  400,
 			ExpectedContent: []string{`"data":{}`},
+			ExpectedEvents:  map[string]int{"*": 0},
 		},
 		{
-			Name:   "authorized as admin + valid filter",
+			Name:   "authorized as superuser + valid filter",
 			Method: http.MethodGet,
-			Url:    "/api/collections?filter=name~'demo'",
-			RequestHeaders: map[string]string{
-				"Authorization": "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpZCI6InN5d2JoZWNuaDQ2cmhtMCIsInR5cGUiOiJhZG1pbiIsImV4cCI6MjIwODk4NTI2MX0.M1m--VOqGyv0d23eeUc0r9xE8ZzHaYVmVFw1VZW6gT8",
+			URL:    "/api/collections?filter=name~'demo'",
+			Headers: map[string]string{
+				"Authorization": "eyJhbGciOiJIUzI1NiJ9.eyJpZCI6InN5d2JoZWNuaDQ2cmhtMCIsInR5cGUiOiJhdXRoIiwiY29sbGVjdGlvbklkIjoicGJjXzMxNDI2MzU4MjMiLCJleHAiOjI1MjQ2MDQ0NjEsInJlZnJlc2hhYmxlIjp0cnVlfQ.UXgO3j-0BumcugrFjbd7j0M4MQvbrLggLlcu_YNGjoY",
 			},
 			ExpectedStatus: 200,
 			ExpectedContent: []string{
@@ -102,13 +119,14 @@ func TestCollectionsList(t *testing.T) {
 				`"perPage":30`,
 				`"totalItems":5`,
 				`"items":[{`,
-				`"id":"wsmn24bux7wo113"`,
-				`"id":"sz5l5z67tg7gku0"`,
-				`"id":"wzlqyes4orhoygb"`,
-				`"id":"4d1blo5cuycfaca"`,
-				`"id":"9n89pl5vkct6330"`,
+				`"name":"demo1"`,
+				`"name":"demo2"`,
+				`"name":"demo3"`,
+				`"name":"demo4"`,
+				`"name":"demo5"`,
 			},
 			ExpectedEvents: map[string]int{
+				"*":                        0,
 				"OnCollectionsListRequest": 1,
 			},
 		},
@@ -120,40 +138,45 @@ func TestCollectionsList(t *testing.T) {
 }
 
 func TestCollectionView(t *testing.T) {
+	t.Parallel()
+
 	scenarios := []tests.ApiScenario{
 		{
 			Name:            "unauthorized",
 			Method:          http.MethodGet,
-			Url:             "/api/collections/demo1",
+			URL:             "/api/collections/demo1",
 			ExpectedStatus:  401,
 			ExpectedContent: []string{`"data":{}`},
+			ExpectedEvents:  map[string]int{"*": 0},
 		},
 		{
-			Name:   "authorized as user",
+			Name:   "authorized as regular user",
 			Method: http.MethodGet,
-			Url:    "/api/collections/demo1",
-			RequestHeaders: map[string]string{
-				"Authorization": "eyJhbGciOiJIUzI1NiJ9.eyJpZCI6IjRxMXhsY2xtZmxva3UzMyIsInR5cGUiOiJhdXRoUmVjb3JkIiwiY29sbGVjdGlvbklkIjoiX3BiX3VzZXJzX2F1dGhfIiwiZXhwIjoyMjA4OTg1MjYxfQ.UwD8JvkbQtXpymT09d7J6fdA0aP9g4FJ1GPh_ggEkzc",
+			URL:    "/api/collections/demo1",
+			Headers: map[string]string{
+				"Authorization": "eyJhbGciOiJIUzI1NiJ9.eyJpZCI6IjRxMXhsY2xtZmxva3UzMyIsInR5cGUiOiJhdXRoIiwiY29sbGVjdGlvbklkIjoiX3BiX3VzZXJzX2F1dGhfIiwiZXhwIjoyNTI0NjA0NDYxLCJyZWZyZXNoYWJsZSI6dHJ1ZX0.ZT3F0Z3iM-xbGgSG3LEKiEzHrPHr8t8IuHLZGGNuxLo",
 			},
-			ExpectedStatus:  401,
+			ExpectedStatus:  403,
 			ExpectedContent: []string{`"data":{}`},
+			ExpectedEvents:  map[string]int{"*": 0},
 		},
 		{
-			Name:   "authorized as admin + nonexisting collection identifier",
+			Name:   "authorized as superuser + nonexisting collection identifier",
 			Method: http.MethodGet,
-			Url:    "/api/collections/missing",
-			RequestHeaders: map[string]string{
-				"Authorization": "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpZCI6InN5d2JoZWNuaDQ2cmhtMCIsInR5cGUiOiJhZG1pbiIsImV4cCI6MjIwODk4NTI2MX0.M1m--VOqGyv0d23eeUc0r9xE8ZzHaYVmVFw1VZW6gT8",
+			URL:    "/api/collections/missing",
+			Headers: map[string]string{
+				"Authorization": "eyJhbGciOiJIUzI1NiJ9.eyJpZCI6InN5d2JoZWNuaDQ2cmhtMCIsInR5cGUiOiJhdXRoIiwiY29sbGVjdGlvbklkIjoicGJjXzMxNDI2MzU4MjMiLCJleHAiOjI1MjQ2MDQ0NjEsInJlZnJlc2hhYmxlIjp0cnVlfQ.UXgO3j-0BumcugrFjbd7j0M4MQvbrLggLlcu_YNGjoY",
 			},
 			ExpectedStatus:  404,
 			ExpectedContent: []string{`"data":{}`},
+			ExpectedEvents:  map[string]int{"*": 0},
 		},
 		{
-			Name:   "authorized as admin + using the collection name",
+			Name:   "authorized as superuser + using the collection name",
 			Method: http.MethodGet,
-			Url:    "/api/collections/demo1",
-			RequestHeaders: map[string]string{
-				"Authorization": "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpZCI6InN5d2JoZWNuaDQ2cmhtMCIsInR5cGUiOiJhZG1pbiIsImV4cCI6MjIwODk4NTI2MX0.M1m--VOqGyv0d23eeUc0r9xE8ZzHaYVmVFw1VZW6gT8",
+			URL:    "/api/collections/demo1",
+			Headers: map[string]string{
+				"Authorization": "eyJhbGciOiJIUzI1NiJ9.eyJpZCI6InN5d2JoZWNuaDQ2cmhtMCIsInR5cGUiOiJhdXRoIiwiY29sbGVjdGlvbklkIjoicGJjXzMxNDI2MzU4MjMiLCJleHAiOjI1MjQ2MDQ0NjEsInJlZnJlc2hhYmxlIjp0cnVlfQ.UXgO3j-0BumcugrFjbd7j0M4MQvbrLggLlcu_YNGjoY",
 			},
 			ExpectedStatus: 200,
 			ExpectedContent: []string{
@@ -161,15 +184,16 @@ func TestCollectionView(t *testing.T) {
 				`"name":"demo1"`,
 			},
 			ExpectedEvents: map[string]int{
+				"*":                       0,
 				"OnCollectionViewRequest": 1,
 			},
 		},
 		{
-			Name:   "authorized as admin + using the collection id",
+			Name:   "authorized as superuser + using the collection id",
 			Method: http.MethodGet,
-			Url:    "/api/collections/wsmn24bux7wo113",
-			RequestHeaders: map[string]string{
-				"Authorization": "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpZCI6InN5d2JoZWNuaDQ2cmhtMCIsInR5cGUiOiJhZG1pbiIsImV4cCI6MjIwODk4NTI2MX0.M1m--VOqGyv0d23eeUc0r9xE8ZzHaYVmVFw1VZW6gT8",
+			URL:    "/api/collections/wsmn24bux7wo113",
+			Headers: map[string]string{
+				"Authorization": "eyJhbGciOiJIUzI1NiJ9.eyJpZCI6InN5d2JoZWNuaDQ2cmhtMCIsInR5cGUiOiJhdXRoIiwiY29sbGVjdGlvbklkIjoicGJjXzMxNDI2MzU4MjMiLCJleHAiOjI1MjQ2MDQ0NjEsInJlZnJlc2hhYmxlIjp0cnVlfQ.UXgO3j-0BumcugrFjbd7j0M4MQvbrLggLlcu_YNGjoY",
 			},
 			ExpectedStatus: 200,
 			ExpectedContent: []string{
@@ -177,6 +201,7 @@ func TestCollectionView(t *testing.T) {
 				`"name":"demo1"`,
 			},
 			ExpectedEvents: map[string]int{
+				"*":                       0,
 				"OnCollectionViewRequest": 1,
 			},
 		},
@@ -188,6 +213,8 @@ func TestCollectionView(t *testing.T) {
 }
 
 func TestCollectionDelete(t *testing.T) {
+	t.Parallel()
+
 	ensureDeletedFiles := func(app *tests.TestApp, collectionId string) {
 		storageDir := filepath.Join(app.DataDir(), "storage", collectionId)
 
@@ -201,90 +228,155 @@ func TestCollectionDelete(t *testing.T) {
 		{
 			Name:            "unauthorized",
 			Method:          http.MethodDelete,
-			Url:             "/api/collections/demo1",
+			URL:             "/api/collections/demo1",
 			ExpectedStatus:  401,
 			ExpectedContent: []string{`"data":{}`},
+			ExpectedEvents:  map[string]int{"*": 0},
 		},
 		{
-			Name:   "authorized as user",
+			Name:   "authorized as regular user",
 			Method: http.MethodDelete,
-			Url:    "/api/collections/demo1",
-			RequestHeaders: map[string]string{
-				"Authorization": "eyJhbGciOiJIUzI1NiJ9.eyJpZCI6IjRxMXhsY2xtZmxva3UzMyIsInR5cGUiOiJhdXRoUmVjb3JkIiwiY29sbGVjdGlvbklkIjoiX3BiX3VzZXJzX2F1dGhfIiwiZXhwIjoyMjA4OTg1MjYxfQ.UwD8JvkbQtXpymT09d7J6fdA0aP9g4FJ1GPh_ggEkzc",
+			URL:    "/api/collections/demo1",
+			Headers: map[string]string{
+				"Authorization": "eyJhbGciOiJIUzI1NiJ9.eyJpZCI6IjRxMXhsY2xtZmxva3UzMyIsInR5cGUiOiJhdXRoIiwiY29sbGVjdGlvbklkIjoiX3BiX3VzZXJzX2F1dGhfIiwiZXhwIjoyNTI0NjA0NDYxLCJyZWZyZXNoYWJsZSI6dHJ1ZX0.ZT3F0Z3iM-xbGgSG3LEKiEzHrPHr8t8IuHLZGGNuxLo",
 			},
-			ExpectedStatus:  401,
+			ExpectedStatus:  403,
 			ExpectedContent: []string{`"data":{}`},
+			ExpectedEvents:  map[string]int{"*": 0},
 		},
 		{
-			Name:   "authorized as admin + nonexisting collection identifier",
+			Name:   "authorized as superuser + nonexisting collection identifier",
 			Method: http.MethodDelete,
-			Url:    "/api/collections/missing",
-			RequestHeaders: map[string]string{
-				"Authorization": "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpZCI6InN5d2JoZWNuaDQ2cmhtMCIsInR5cGUiOiJhZG1pbiIsImV4cCI6MjIwODk4NTI2MX0.M1m--VOqGyv0d23eeUc0r9xE8ZzHaYVmVFw1VZW6gT8",
+			URL:    "/api/collections/missing",
+			Headers: map[string]string{
+				"Authorization": "eyJhbGciOiJIUzI1NiJ9.eyJpZCI6InN5d2JoZWNuaDQ2cmhtMCIsInR5cGUiOiJhdXRoIiwiY29sbGVjdGlvbklkIjoicGJjXzMxNDI2MzU4MjMiLCJleHAiOjI1MjQ2MDQ0NjEsInJlZnJlc2hhYmxlIjp0cnVlfQ.UXgO3j-0BumcugrFjbd7j0M4MQvbrLggLlcu_YNGjoY",
 			},
 			ExpectedStatus:  404,
 			ExpectedContent: []string{`"data":{}`},
+			ExpectedEvents:  map[string]int{"*": 0},
 		},
 		{
-			Name:   "authorized as admin + using the collection name",
+			Name:   "authorized as superuser + using the collection name",
 			Method: http.MethodDelete,
-			Url:    "/api/collections/demo1",
-			RequestHeaders: map[string]string{
-				"Authorization": "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpZCI6InN5d2JoZWNuaDQ2cmhtMCIsInR5cGUiOiJhZG1pbiIsImV4cCI6MjIwODk4NTI2MX0.M1m--VOqGyv0d23eeUc0r9xE8ZzHaYVmVFw1VZW6gT8",
+			URL:    "/api/collections/demo5",
+			Headers: map[string]string{
+				"Authorization": "eyJhbGciOiJIUzI1NiJ9.eyJpZCI6InN5d2JoZWNuaDQ2cmhtMCIsInR5cGUiOiJhdXRoIiwiY29sbGVjdGlvbklkIjoicGJjXzMxNDI2MzU4MjMiLCJleHAiOjI1MjQ2MDQ0NjEsInJlZnJlc2hhYmxlIjp0cnVlfQ.UXgO3j-0BumcugrFjbd7j0M4MQvbrLggLlcu_YNGjoY",
 			},
+			Delay:          100 * time.Millisecond,
 			ExpectedStatus: 204,
 			ExpectedEvents: map[string]int{
-				"OnModelBeforeDelete":             1,
-				"OnModelAfterDelete":              1,
-				"OnCollectionBeforeDeleteRequest": 1,
-				"OnCollectionAfterDeleteRequest":  1,
+				"*":                              0,
+				"OnCollectionDeleteRequest":      1,
+				"OnCollectionDelete":             1,
+				"OnCollectionDeleteExecute":      1,
+				"OnCollectionAfterDeleteSuccess": 1,
+				"OnModelDelete":                  1,
+				"OnModelDeleteExecute":           1,
+				"OnModelAfterDeleteSuccess":      1,
 			},
-			AfterTestFunc: func(t *testing.T, app *tests.TestApp, e *echo.Echo) {
-				ensureDeletedFiles(app, "wsmn24bux7wo113")
+			AfterTestFunc: func(t testing.TB, app *tests.TestApp, res *http.Response) {
+				ensureDeletedFiles(app, "9n89pl5vkct6330")
 			},
 		},
 		{
-			Name:   "authorized as admin + using the collection id",
+			Name:   "authorized as superuser + using the collection id",
 			Method: http.MethodDelete,
-			Url:    "/api/collections/wsmn24bux7wo113",
-			RequestHeaders: map[string]string{
-				"Authorization": "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpZCI6InN5d2JoZWNuaDQ2cmhtMCIsInR5cGUiOiJhZG1pbiIsImV4cCI6MjIwODk4NTI2MX0.M1m--VOqGyv0d23eeUc0r9xE8ZzHaYVmVFw1VZW6gT8",
+			URL:    "/api/collections/9n89pl5vkct6330",
+			Headers: map[string]string{
+				"Authorization": "eyJhbGciOiJIUzI1NiJ9.eyJpZCI6InN5d2JoZWNuaDQ2cmhtMCIsInR5cGUiOiJhdXRoIiwiY29sbGVjdGlvbklkIjoicGJjXzMxNDI2MzU4MjMiLCJleHAiOjI1MjQ2MDQ0NjEsInJlZnJlc2hhYmxlIjp0cnVlfQ.UXgO3j-0BumcugrFjbd7j0M4MQvbrLggLlcu_YNGjoY",
 			},
+			Delay:          100 * time.Millisecond,
 			ExpectedStatus: 204,
 			ExpectedEvents: map[string]int{
-				"OnModelBeforeDelete":             1,
-				"OnModelAfterDelete":              1,
-				"OnCollectionBeforeDeleteRequest": 1,
-				"OnCollectionAfterDeleteRequest":  1,
+				"*":                              0,
+				"OnCollectionDeleteRequest":      1,
+				"OnCollectionDelete":             1,
+				"OnCollectionDeleteExecute":      1,
+				"OnCollectionAfterDeleteSuccess": 1,
+				"OnModelDelete":                  1,
+				"OnModelDeleteExecute":           1,
+				"OnModelAfterDeleteSuccess":      1,
 			},
-			AfterTestFunc: func(t *testing.T, app *tests.TestApp, e *echo.Echo) {
-				ensureDeletedFiles(app, "wsmn24bux7wo113")
+			AfterTestFunc: func(t testing.TB, app *tests.TestApp, res *http.Response) {
+				ensureDeletedFiles(app, "9n89pl5vkct6330")
 			},
 		},
 		{
-			Name:   "authorized as admin + trying to delete a system collection",
+			Name:   "authorized as superuser + trying to delete a system collection",
 			Method: http.MethodDelete,
-			Url:    "/api/collections/nologin",
-			RequestHeaders: map[string]string{
-				"Authorization": "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpZCI6InN5d2JoZWNuaDQ2cmhtMCIsInR5cGUiOiJhZG1pbiIsImV4cCI6MjIwODk4NTI2MX0.M1m--VOqGyv0d23eeUc0r9xE8ZzHaYVmVFw1VZW6gT8",
+			URL:    "/api/collections/" + core.CollectionNameMFAs,
+			Headers: map[string]string{
+				"Authorization": "eyJhbGciOiJIUzI1NiJ9.eyJpZCI6InN5d2JoZWNuaDQ2cmhtMCIsInR5cGUiOiJhdXRoIiwiY29sbGVjdGlvbklkIjoicGJjXzMxNDI2MzU4MjMiLCJleHAiOjI1MjQ2MDQ0NjEsInJlZnJlc2hhYmxlIjp0cnVlfQ.UXgO3j-0BumcugrFjbd7j0M4MQvbrLggLlcu_YNGjoY",
 			},
 			ExpectedStatus:  400,
 			ExpectedContent: []string{`"data":{}`},
 			ExpectedEvents: map[string]int{
-				"OnCollectionBeforeDeleteRequest": 1,
+				"*":                            0,
+				"OnCollectionDeleteRequest":    1,
+				"OnCollectionDelete":           1,
+				"OnCollectionDeleteExecute":    1,
+				"OnCollectionAfterDeleteError": 1,
+				"OnModelDelete":                1,
+				"OnModelDeleteExecute":         1,
+				"OnModelAfterDeleteError":      1,
 			},
 		},
 		{
-			Name:   "authorized as admin + trying to delete a referenced collection",
+			Name:   "authorized as superuser + trying to delete a referenced collection",
 			Method: http.MethodDelete,
-			Url:    "/api/collections/demo2",
-			RequestHeaders: map[string]string{
-				"Authorization": "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpZCI6InN5d2JoZWNuaDQ2cmhtMCIsInR5cGUiOiJhZG1pbiIsImV4cCI6MjIwODk4NTI2MX0.M1m--VOqGyv0d23eeUc0r9xE8ZzHaYVmVFw1VZW6gT8",
+			URL:    "/api/collections/demo2",
+			Headers: map[string]string{
+				"Authorization": "eyJhbGciOiJIUzI1NiJ9.eyJpZCI6InN5d2JoZWNuaDQ2cmhtMCIsInR5cGUiOiJhdXRoIiwiY29sbGVjdGlvbklkIjoicGJjXzMxNDI2MzU4MjMiLCJleHAiOjI1MjQ2MDQ0NjEsInJlZnJlc2hhYmxlIjp0cnVlfQ.UXgO3j-0BumcugrFjbd7j0M4MQvbrLggLlcu_YNGjoY",
 			},
 			ExpectedStatus:  400,
 			ExpectedContent: []string{`"data":{}`},
 			ExpectedEvents: map[string]int{
-				"OnCollectionBeforeDeleteRequest": 1,
+				"*":                            0,
+				"OnCollectionDeleteRequest":    1,
+				"OnCollectionDelete":           1,
+				"OnCollectionDeleteExecute":    1,
+				"OnCollectionAfterDeleteError": 1,
+				"OnModelDelete":                1,
+				"OnModelDeleteExecute":         1,
+				"OnModelAfterDeleteError":      1,
+			},
+		},
+		{
+			Name:   "authorized as superuser + deleting a view",
+			Method: http.MethodDelete,
+			URL:    "/api/collections/view2",
+			Headers: map[string]string{
+				"Authorization": "eyJhbGciOiJIUzI1NiJ9.eyJpZCI6InN5d2JoZWNuaDQ2cmhtMCIsInR5cGUiOiJhdXRoIiwiY29sbGVjdGlvbklkIjoicGJjXzMxNDI2MzU4MjMiLCJleHAiOjI1MjQ2MDQ0NjEsInJlZnJlc2hhYmxlIjp0cnVlfQ.UXgO3j-0BumcugrFjbd7j0M4MQvbrLggLlcu_YNGjoY",
+			},
+			ExpectedStatus: 204,
+			ExpectedEvents: map[string]int{
+				"*":                              0,
+				"OnCollectionDeleteRequest":      1,
+				"OnCollectionDelete":             1,
+				"OnCollectionDeleteExecute":      1,
+				"OnCollectionAfterDeleteSuccess": 1,
+				"OnModelDelete":                  1,
+				"OnModelDeleteExecute":           1,
+				"OnModelAfterDeleteSuccess":      1,
+			},
+		},
+		{
+			Name:   "OnCollectionAfterDeleteSuccessRequest error response",
+			Method: http.MethodDelete,
+			URL:    "/api/collections/view2",
+			Headers: map[string]string{
+				"Authorization": "eyJhbGciOiJIUzI1NiJ9.eyJpZCI6InN5d2JoZWNuaDQ2cmhtMCIsInR5cGUiOiJhdXRoIiwiY29sbGVjdGlvbklkIjoicGJjXzMxNDI2MzU4MjMiLCJleHAiOjI1MjQ2MDQ0NjEsInJlZnJlc2hhYmxlIjp0cnVlfQ.UXgO3j-0BumcugrFjbd7j0M4MQvbrLggLlcu_YNGjoY",
+			},
+			BeforeTestFunc: func(t testing.TB, app *tests.TestApp, e *core.ServeEvent) {
+				app.OnCollectionDeleteRequest().BindFunc(func(e *core.CollectionRequestEvent) error {
+					return errors.New("error")
+				})
+			},
+			ExpectedStatus:  400,
+			ExpectedContent: []string{`"data":{}`},
+			ExpectedEvents: map[string]int{
+				"*":                         0,
+				"OnCollectionDeleteRequest": 1,
 			},
 		},
 	}
@@ -295,61 +387,89 @@ func TestCollectionDelete(t *testing.T) {
 }
 
 func TestCollectionCreate(t *testing.T) {
+	t.Parallel()
+
 	scenarios := []tests.ApiScenario{
 		{
 			Name:            "unauthorized",
 			Method:          http.MethodPost,
-			Url:             "/api/collections",
+			URL:             "/api/collections",
 			ExpectedStatus:  401,
 			ExpectedContent: []string{`"data":{}`},
+			ExpectedEvents:  map[string]int{"*": 0},
 		},
 		{
-			Name:   "authorized as user",
+			Name:   "authorized as regular user",
 			Method: http.MethodPost,
-			Url:    "/api/collections",
-			RequestHeaders: map[string]string{
-				"Authorization": "eyJhbGciOiJIUzI1NiJ9.eyJpZCI6IjRxMXhsY2xtZmxva3UzMyIsInR5cGUiOiJhdXRoUmVjb3JkIiwiY29sbGVjdGlvbklkIjoiX3BiX3VzZXJzX2F1dGhfIiwiZXhwIjoyMjA4OTg1MjYxfQ.UwD8JvkbQtXpymT09d7J6fdA0aP9g4FJ1GPh_ggEkzc",
+			URL:    "/api/collections",
+			Body:   strings.NewReader(`{"name":"new","type":"base","fields":[{"type":"text","name":"test"}]}`),
+			Headers: map[string]string{
+				"Authorization": "eyJhbGciOiJIUzI1NiJ9.eyJpZCI6IjRxMXhsY2xtZmxva3UzMyIsInR5cGUiOiJhdXRoIiwiY29sbGVjdGlvbklkIjoiX3BiX3VzZXJzX2F1dGhfIiwiZXhwIjoyNTI0NjA0NDYxLCJyZWZyZXNoYWJsZSI6dHJ1ZX0.ZT3F0Z3iM-xbGgSG3LEKiEzHrPHr8t8IuHLZGGNuxLo",
 			},
-			ExpectedStatus:  401,
+			ExpectedStatus:  403,
 			ExpectedContent: []string{`"data":{}`},
+			ExpectedEvents:  map[string]int{"*": 0},
 		},
 		{
-			Name:   "authorized as admin + empty data",
+			Name:   "authorized as superuser + empty data",
 			Method: http.MethodPost,
-			Url:    "/api/collections",
+			URL:    "/api/collections",
 			Body:   strings.NewReader(``),
-			RequestHeaders: map[string]string{
-				"Authorization": "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpZCI6InN5d2JoZWNuaDQ2cmhtMCIsInR5cGUiOiJhZG1pbiIsImV4cCI6MjIwODk4NTI2MX0.M1m--VOqGyv0d23eeUc0r9xE8ZzHaYVmVFw1VZW6gT8",
+			Headers: map[string]string{
+				"Authorization": "eyJhbGciOiJIUzI1NiJ9.eyJpZCI6InN5d2JoZWNuaDQ2cmhtMCIsInR5cGUiOiJhdXRoIiwiY29sbGVjdGlvbklkIjoicGJjXzMxNDI2MzU4MjMiLCJleHAiOjI1MjQ2MDQ0NjEsInJlZnJlc2hhYmxlIjp0cnVlfQ.UXgO3j-0BumcugrFjbd7j0M4MQvbrLggLlcu_YNGjoY",
 			},
 			ExpectedStatus: 400,
 			ExpectedContent: []string{
 				`"data":{`,
 				`"name":{"code":"validation_required"`,
-				`"schema":{"code":"validation_required"`,
+			},
+			NotExpectedContent: []string{
+				`"fields":{`,
+			},
+			ExpectedEvents: map[string]int{
+				"*":                            0,
+				"OnCollectionCreateRequest":    1,
+				"OnCollectionCreate":           1,
+				"OnCollectionAfterCreateError": 1,
+				"OnCollectionValidate":         1,
+				"OnModelCreate":                1,
+				"OnModelAfterCreateError":      1,
+				"OnModelValidate":              1,
 			},
 		},
 		{
-			Name:   "authorized as admin + invalid data (eg. existing name)",
+			Name:   "authorized as superuser + invalid data (eg. existing name)",
 			Method: http.MethodPost,
-			Url:    "/api/collections",
-			Body:   strings.NewReader(`{"name":"demo1","type":"base","schema":[{"type":"text","name":""}]}`),
-			RequestHeaders: map[string]string{
-				"Authorization": "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpZCI6InN5d2JoZWNuaDQ2cmhtMCIsInR5cGUiOiJhZG1pbiIsImV4cCI6MjIwODk4NTI2MX0.M1m--VOqGyv0d23eeUc0r9xE8ZzHaYVmVFw1VZW6gT8",
+			URL:    "/api/collections",
+			Body:   strings.NewReader(`{"name":"demo1","type":"base","fields":[{"type":"text","name":""}]}`),
+			Headers: map[string]string{
+				"Authorization": "eyJhbGciOiJIUzI1NiJ9.eyJpZCI6InN5d2JoZWNuaDQ2cmhtMCIsInR5cGUiOiJhdXRoIiwiY29sbGVjdGlvbklkIjoicGJjXzMxNDI2MzU4MjMiLCJleHAiOjI1MjQ2MDQ0NjEsInJlZnJlc2hhYmxlIjp0cnVlfQ.UXgO3j-0BumcugrFjbd7j0M4MQvbrLggLlcu_YNGjoY",
 			},
 			ExpectedStatus: 400,
 			ExpectedContent: []string{
 				`"data":{`,
+				`"fields":{`,
 				`"name":{"code":"validation_collection_name_exists"`,
-				`"schema":{"0":{"name":{"code":"validation_required"`,
+				`"name":{"code":"validation_required"`,
+			},
+			ExpectedEvents: map[string]int{
+				"*":                            0,
+				"OnCollectionCreateRequest":    1,
+				"OnCollectionCreate":           1,
+				"OnCollectionAfterCreateError": 1,
+				"OnCollectionValidate":         1,
+				"OnModelCreate":                1,
+				"OnModelAfterCreateError":      1,
+				"OnModelValidate":              1,
 			},
 		},
 		{
-			Name:   "authorized as admin + valid data",
+			Name:   "authorized as superuser + valid data",
 			Method: http.MethodPost,
-			Url:    "/api/collections",
-			Body:   strings.NewReader(`{"name":"new","type":"base","schema":[{"type":"text","id":"12345789","name":"test"}]}`),
-			RequestHeaders: map[string]string{
-				"Authorization": "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpZCI6InN5d2JoZWNuaDQ2cmhtMCIsInR5cGUiOiJhZG1pbiIsImV4cCI6MjIwODk4NTI2MX0.M1m--VOqGyv0d23eeUc0r9xE8ZzHaYVmVFw1VZW6gT8",
+			URL:    "/api/collections",
+			Body:   strings.NewReader(`{"name":"new","type":"base","fields":[{"type":"text","id":"12345789","name":"test"}]}`),
+			Headers: map[string]string{
+				"Authorization": "eyJhbGciOiJIUzI1NiJ9.eyJpZCI6InN5d2JoZWNuaDQ2cmhtMCIsInR5cGUiOiJhdXRoIiwiY29sbGVjdGlvbklkIjoicGJjXzMxNDI2MzU4MjMiLCJleHAiOjI1MjQ2MDQ0NjEsInJlZnJlc2hhYmxlIjp0cnVlfQ.UXgO3j-0BumcugrFjbd7j0M4MQvbrLggLlcu_YNGjoY",
 			},
 			ExpectedStatus: 200,
 			ExpectedContent: []string{
@@ -357,23 +477,37 @@ func TestCollectionCreate(t *testing.T) {
 				`"name":"new"`,
 				`"type":"base"`,
 				`"system":false`,
-				`"schema":[{"system":false,"id":"12345789","name":"test","type":"text","required":false,"unique":false,"options":{"min":null,"max":null,"pattern":""}}]`,
-				`"options":{}`,
+				// ensures that id field was prepended
+				`"fields":[{"autogeneratePattern":"[a-z0-9]{15}","hidden":false,"id":"text3208210256","max":15,"min":15,"name":"id","pattern":"^[a-z0-9]+$","presentable":false,"primaryKey":true,"required":true,"system":true,"type":"text"},{"autogeneratePattern":"","hidden":false,"id":"12345789","max":0,"min":0,"name":"test","pattern":"","presentable":false,"primaryKey":false,"required":false,"system":false,"type":"text"}]`,
 			},
 			ExpectedEvents: map[string]int{
-				"OnModelBeforeCreate":             1,
-				"OnModelAfterCreate":              1,
-				"OnCollectionBeforeCreateRequest": 1,
-				"OnCollectionAfterCreateRequest":  1,
+				"*":                              0,
+				"OnCollectionCreateRequest":      1,
+				"OnCollectionCreate":             1,
+				"OnCollectionCreateExecute":      1,
+				"OnCollectionAfterCreateSuccess": 1,
+				"OnCollectionValidate":           1,
+				"OnModelCreate":                  1,
+				"OnModelCreateExecute":           1,
+				"OnModelAfterCreateSuccess":      1,
+				"OnModelValidate":                1,
 			},
 		},
 		{
-			Name:   "creating auth collection without specified options",
+			Name:   "creating auth collection (default settings merge test)",
 			Method: http.MethodPost,
-			Url:    "/api/collections",
-			Body:   strings.NewReader(`{"name":"new","type":"auth","schema":[{"type":"text","id":"12345789","name":"test"}]}`),
-			RequestHeaders: map[string]string{
-				"Authorization": "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpZCI6InN5d2JoZWNuaDQ2cmhtMCIsInR5cGUiOiJhZG1pbiIsImV4cCI6MjIwODk4NTI2MX0.M1m--VOqGyv0d23eeUc0r9xE8ZzHaYVmVFw1VZW6gT8",
+			URL:    "/api/collections",
+			Body: strings.NewReader(`{
+				"name":"new",
+				"type":"auth",
+				"emailChangeToken":{"duration":123},
+				"fields":[
+					{"type":"text","id":"12345789","name":"test"},
+					{"type":"text","name":"tokenKey","system":true,"required":false,"min":10}
+				]
+			}`),
+			Headers: map[string]string{
+				"Authorization": "eyJhbGciOiJIUzI1NiJ9.eyJpZCI6InN5d2JoZWNuaDQ2cmhtMCIsInR5cGUiOiJhdXRoIiwiY29sbGVjdGlvbklkIjoicGJjXzMxNDI2MzU4MjMiLCJleHAiOjI1MjQ2MDQ0NjEsInJlZnJlc2hhYmxlIjp0cnVlfQ.UXgO3j-0BumcugrFjbd7j0M4MQvbrLggLlcu_YNGjoY",
 			},
 			ExpectedStatus: 200,
 			ExpectedContent: []string{
@@ -381,62 +515,44 @@ func TestCollectionCreate(t *testing.T) {
 				`"name":"new"`,
 				`"type":"auth"`,
 				`"system":false`,
-				`"schema":[{"system":false,"id":"12345789","name":"test","type":"text","required":false,"unique":false,"options":{"min":null,"max":null,"pattern":""}}]`,
-				`"options":{"allowEmailAuth":false,"allowOAuth2Auth":false,"allowUsernameAuth":false,"exceptEmailDomains":null,"manageRule":null,"minPasswordLength":0,"onlyEmailDomains":null,"requireEmail":false}`,
+				`"passwordAuth":{"enabled":true,"identityFields":["email"]}`,
+				`"authRule":""`,
+				`"manageRule":null`,
+				`"name":"test"`,
+				`"name":"id"`,
+				`"name":"tokenKey"`,
+				`"name":"password"`,
+				`"name":"email"`,
+				`"name":"emailVisibility"`,
+				`"name":"verified"`,
+				`"duration":123`,
+				// should overwrite the user required option but keep the min value
+				`{"autogeneratePattern":"","hidden":true,"id":"text2504183744","max":0,"min":10,"name":"tokenKey","pattern":"","presentable":false,"primaryKey":false,"required":true,"system":true,"type":"text"}`,
+			},
+			NotExpectedContent: []string{
+				`"secret":"`,
 			},
 			ExpectedEvents: map[string]int{
-				"OnModelBeforeCreate":             1,
-				"OnModelAfterCreate":              1,
-				"OnCollectionBeforeCreateRequest": 1,
-				"OnCollectionAfterCreateRequest":  1,
-			},
-		},
-		{
-			Name:   "trying to create auth collection with reserved auth fields",
-			Method: http.MethodPost,
-			Url:    "/api/collections",
-			Body: strings.NewReader(`{
-				"name":"new",
-				"type":"auth",
-				"schema":[
-					{"type":"text","name":"email"},
-					{"type":"text","name":"username"},
-					{"type":"text","name":"verified"},
-					{"type":"text","name":"emailVisibility"},
-					{"type":"text","name":"lastResetSentAt"},
-					{"type":"text","name":"lastVerificationSentAt"},
-					{"type":"text","name":"tokenKey"},
-					{"type":"text","name":"passwordHash"},
-					{"type":"text","name":"password"},
-					{"type":"text","name":"passwordConfirm"},
-					{"type":"text","name":"oldPassword"}
-				]
-			}`),
-			RequestHeaders: map[string]string{
-				"Authorization": "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpZCI6InN5d2JoZWNuaDQ2cmhtMCIsInR5cGUiOiJhZG1pbiIsImV4cCI6MjIwODk4NTI2MX0.M1m--VOqGyv0d23eeUc0r9xE8ZzHaYVmVFw1VZW6gT8",
-			},
-			ExpectedStatus: 400,
-			ExpectedContent: []string{
-				`"data":{"schema":{`,
-				`"0":{"name":{"code":"validation_reserved_auth_field_name"`,
-				`"1":{"name":{"code":"validation_reserved_auth_field_name"`,
-				`"2":{"name":{"code":"validation_reserved_auth_field_name"`,
-				`"3":{"name":{"code":"validation_reserved_auth_field_name"`,
-				`"4":{"name":{"code":"validation_reserved_auth_field_name"`,
-				`"5":{"name":{"code":"validation_reserved_auth_field_name"`,
-				`"6":{"name":{"code":"validation_reserved_auth_field_name"`,
-				`"7":{"name":{"code":"validation_reserved_auth_field_name"`,
-				`"8":{"name":{"code":"validation_reserved_auth_field_name"`,
+				"*":                              0,
+				"OnCollectionCreateRequest":      1,
+				"OnCollectionCreate":             1,
+				"OnCollectionCreateExecute":      1,
+				"OnCollectionAfterCreateSuccess": 1,
+				"OnCollectionValidate":           1,
+				"OnModelCreate":                  1,
+				"OnModelCreateExecute":           1,
+				"OnModelAfterCreateSuccess":      1,
+				"OnModelValidate":                1,
 			},
 		},
 		{
 			Name:   "creating base collection with reserved auth fields",
 			Method: http.MethodPost,
-			Url:    "/api/collections",
+			URL:    "/api/collections",
 			Body: strings.NewReader(`{
 				"name":"new",
 				"type":"base",
-				"schema":[
+				"fields":[
 					{"type":"text","name":"email"},
 					{"type":"text","name":"username"},
 					{"type":"text","name":"verified"},
@@ -450,69 +566,347 @@ func TestCollectionCreate(t *testing.T) {
 					{"type":"text","name":"oldPassword"}
 				]
 			}`),
-			RequestHeaders: map[string]string{
-				"Authorization": "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpZCI6InN5d2JoZWNuaDQ2cmhtMCIsInR5cGUiOiJhZG1pbiIsImV4cCI6MjIwODk4NTI2MX0.M1m--VOqGyv0d23eeUc0r9xE8ZzHaYVmVFw1VZW6gT8",
+			Headers: map[string]string{
+				"Authorization": "eyJhbGciOiJIUzI1NiJ9.eyJpZCI6InN5d2JoZWNuaDQ2cmhtMCIsInR5cGUiOiJhdXRoIiwiY29sbGVjdGlvbklkIjoicGJjXzMxNDI2MzU4MjMiLCJleHAiOjI1MjQ2MDQ0NjEsInJlZnJlc2hhYmxlIjp0cnVlfQ.UXgO3j-0BumcugrFjbd7j0M4MQvbrLggLlcu_YNGjoY",
 			},
 			ExpectedStatus: 200,
 			ExpectedContent: []string{
 				`"name":"new"`,
 				`"type":"base"`,
-				`"schema":[{`,
+				`"fields":[{`,
 			},
 			ExpectedEvents: map[string]int{
-				"OnModelBeforeCreate":             1,
-				"OnModelAfterCreate":              1,
-				"OnCollectionBeforeCreateRequest": 1,
-				"OnCollectionAfterCreateRequest":  1,
+				"*":                              0,
+				"OnCollectionCreateRequest":      1,
+				"OnCollectionCreate":             1,
+				"OnCollectionCreateExecute":      1,
+				"OnCollectionAfterCreateSuccess": 1,
+				"OnCollectionValidate":           1,
+				"OnModelCreate":                  1,
+				"OnModelCreateExecute":           1,
+				"OnModelAfterCreateSuccess":      1,
+				"OnModelValidate":                1,
 			},
 		},
 		{
-			Name:   "trying to create base collection with reserved base fields",
+			Name:   "trying to create base collection with reserved system fields",
 			Method: http.MethodPost,
-			Url:    "/api/collections",
+			URL:    "/api/collections",
 			Body: strings.NewReader(`{
 				"name":"new",
 				"type":"base",
-				"schema":[
+				"fields":[
 					{"type":"text","name":"id"},
-					{"type":"text","name":"created"},
-					{"type":"text","name":"updated"},
 					{"type":"text","name":"expand"},
 					{"type":"text","name":"collectionId"},
 					{"type":"text","name":"collectionName"}
 				]
 			}`),
-			RequestHeaders: map[string]string{
-				"Authorization": "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpZCI6InN5d2JoZWNuaDQ2cmhtMCIsInR5cGUiOiJhZG1pbiIsImV4cCI6MjIwODk4NTI2MX0.M1m--VOqGyv0d23eeUc0r9xE8ZzHaYVmVFw1VZW6gT8",
+			Headers: map[string]string{
+				"Authorization": "eyJhbGciOiJIUzI1NiJ9.eyJpZCI6InN5d2JoZWNuaDQ2cmhtMCIsInR5cGUiOiJhdXRoIiwiY29sbGVjdGlvbklkIjoicGJjXzMxNDI2MzU4MjMiLCJleHAiOjI1MjQ2MDQ0NjEsInJlZnJlc2hhYmxlIjp0cnVlfQ.UXgO3j-0BumcugrFjbd7j0M4MQvbrLggLlcu_YNGjoY",
 			},
 			ExpectedStatus: 400,
 			ExpectedContent: []string{
-				`"data":{"schema":{`,
-				`"0":{"name":{"code":"validation_not_in_invalid`,
+				`"data":{"fields":{`,
 				`"1":{"name":{"code":"validation_not_in_invalid`,
 				`"2":{"name":{"code":"validation_not_in_invalid`,
 				`"3":{"name":{"code":"validation_not_in_invalid`,
-				`"4":{"name":{"code":"validation_not_in_invalid`,
-				`"5":{"name":{"code":"validation_not_in_invalid`,
+			},
+			ExpectedEvents: map[string]int{
+				"*":                            0,
+				"OnCollectionCreateRequest":    1,
+				"OnCollectionCreate":           1,
+				"OnCollectionAfterCreateError": 1,
+				"OnCollectionValidate":         1,
+				"OnModelCreate":                1,
+				"OnModelAfterCreateError":      1,
+				"OnModelValidate":              1,
 			},
 		},
 		{
-			Name:   "trying to create auth collection with invalid options",
+			Name:   "trying to create auth collection with reserved auth fields",
 			Method: http.MethodPost,
-			Url:    "/api/collections",
+			URL:    "/api/collections",
 			Body: strings.NewReader(`{
 				"name":"new",
 				"type":"auth",
-				"schema":[{"type":"text","id":"12345789","name":"test"}],
-				"options":{"allowUsernameAuth": true}
+				"fields":[
+					{"type":"text","name":"oldPassword"},
+					{"type":"text","name":"passwordConfirm"}
+				]
 			}`),
-			RequestHeaders: map[string]string{
-				"Authorization": "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpZCI6InN5d2JoZWNuaDQ2cmhtMCIsInR5cGUiOiJhZG1pbiIsImV4cCI6MjIwODk4NTI2MX0.M1m--VOqGyv0d23eeUc0r9xE8ZzHaYVmVFw1VZW6gT8",
+			Headers: map[string]string{
+				"Authorization": "eyJhbGciOiJIUzI1NiJ9.eyJpZCI6InN5d2JoZWNuaDQ2cmhtMCIsInR5cGUiOiJhdXRoIiwiY29sbGVjdGlvbklkIjoicGJjXzMxNDI2MzU4MjMiLCJleHAiOjI1MjQ2MDQ0NjEsInJlZnJlc2hhYmxlIjp0cnVlfQ.UXgO3j-0BumcugrFjbd7j0M4MQvbrLggLlcu_YNGjoY",
+			},
+			ExpectedStatus: 400,
+			ExpectedContent: []string{
+				`"data":{"fields":{`,
+				`"1":{"name":{"code":"validation_reserved_field_name`,
+				`"2":{"name":{"code":"validation_reserved_field_name`,
+			},
+			ExpectedEvents: map[string]int{
+				"*":                            0,
+				"OnCollectionCreateRequest":    1,
+				"OnCollectionCreate":           1,
+				"OnCollectionAfterCreateError": 1,
+				"OnCollectionValidate":         1,
+				"OnModelCreate":                1,
+				"OnModelAfterCreateError":      1,
+				"OnModelValidate":              1,
+			},
+		},
+		{
+			Name:   "OnCollectionCreateRequest error response",
+			Method: http.MethodPost,
+			URL:    "/api/collections",
+			Body:   strings.NewReader(`{"name":"new","type":"base"}`),
+			Headers: map[string]string{
+				"Authorization": "eyJhbGciOiJIUzI1NiJ9.eyJpZCI6InN5d2JoZWNuaDQ2cmhtMCIsInR5cGUiOiJhdXRoIiwiY29sbGVjdGlvbklkIjoicGJjXzMxNDI2MzU4MjMiLCJleHAiOjI1MjQ2MDQ0NjEsInJlZnJlc2hhYmxlIjp0cnVlfQ.UXgO3j-0BumcugrFjbd7j0M4MQvbrLggLlcu_YNGjoY",
+			},
+			BeforeTestFunc: func(t testing.TB, app *tests.TestApp, e *core.ServeEvent) {
+				app.OnCollectionCreateRequest().BindFunc(func(e *core.CollectionRequestEvent) error {
+					return errors.New("error")
+				})
+			},
+			ExpectedStatus:  400,
+			ExpectedContent: []string{`"data":{}`},
+			ExpectedEvents: map[string]int{
+				"*":                         0,
+				"OnCollectionCreateRequest": 1,
+			},
+		},
+
+		// view
+		// -----------------------------------------------------------
+		{
+			Name:   "trying to create view collection with invalid options",
+			Method: http.MethodPost,
+			URL:    "/api/collections",
+			Body: strings.NewReader(`{
+				"name":"new",
+				"type":"view",
+				"fields":[{"type":"text","id":"12345789","name":"ignored!@#$"}],
+				"viewQuery":"invalid"
+			}`),
+			Headers: map[string]string{
+				"Authorization": "eyJhbGciOiJIUzI1NiJ9.eyJpZCI6InN5d2JoZWNuaDQ2cmhtMCIsInR5cGUiOiJhdXRoIiwiY29sbGVjdGlvbklkIjoicGJjXzMxNDI2MzU4MjMiLCJleHAiOjI1MjQ2MDQ0NjEsInJlZnJlc2hhYmxlIjp0cnVlfQ.UXgO3j-0BumcugrFjbd7j0M4MQvbrLggLlcu_YNGjoY",
 			},
 			ExpectedStatus: 400,
 			ExpectedContent: []string{
 				`"data":{`,
-				`"options":{"minPasswordLength":{"code":"validation_required"`,
+				`"viewQuery":{"code":"validation_invalid_view_query`,
+			},
+			ExpectedEvents: map[string]int{
+				"*":                            0,
+				"OnCollectionCreateRequest":    1,
+				"OnCollectionCreate":           1,
+				"OnCollectionAfterCreateError": 1,
+				"OnCollectionValidate":         1,
+				"OnModelCreate":                1,
+				"OnModelAfterCreateError":      1,
+				"OnModelValidate":              1,
+			},
+		},
+		{
+			Name:   "creating view collection",
+			Method: http.MethodPost,
+			URL:    "/api/collections",
+			Body: strings.NewReader(`{
+				"name":"new",
+				"type":"view",
+				"fields":[{"type":"text","id":"12345789","name":"ignored!@#$"}],
+				"viewQuery": "select 1 as id from ` + core.CollectionNameSuperusers + `"
+			}`),
+			Headers: map[string]string{
+				"Authorization": "eyJhbGciOiJIUzI1NiJ9.eyJpZCI6InN5d2JoZWNuaDQ2cmhtMCIsInR5cGUiOiJhdXRoIiwiY29sbGVjdGlvbklkIjoicGJjXzMxNDI2MzU4MjMiLCJleHAiOjI1MjQ2MDQ0NjEsInJlZnJlc2hhYmxlIjp0cnVlfQ.UXgO3j-0BumcugrFjbd7j0M4MQvbrLggLlcu_YNGjoY",
+			},
+			ExpectedStatus: 200,
+			ExpectedContent: []string{
+				`"name":"new"`,
+				`"type":"view"`,
+				`"fields":[{"autogeneratePattern":"","hidden":false,"id":"text3208210256","max":0,"min":0,"name":"id","pattern":"^[a-z0-9]+$","presentable":false,"primaryKey":true,"required":true,"system":true,"type":"text"}]`,
+			},
+			ExpectedEvents: map[string]int{
+				"*":                              0,
+				"OnCollectionCreateRequest":      1,
+				"OnCollectionCreate":             1,
+				"OnCollectionCreateExecute":      1,
+				"OnCollectionAfterCreateSuccess": 1,
+				"OnCollectionValidate":           1,
+				"OnModelCreate":                  1,
+				"OnModelCreateExecute":           1,
+				"OnModelAfterCreateSuccess":      1,
+				"OnModelValidate":                1,
+			},
+		},
+
+		// indexes
+		// -----------------------------------------------------------
+		{
+			Name:   "creating base collection with invalid indexes",
+			Method: http.MethodPost,
+			URL:    "/api/collections",
+			Body: strings.NewReader(`{
+				"name":"new",
+				"type":"base",
+				"fields":[
+					{"type":"text","name":"test"}
+				],
+				"indexes": [
+					"create index idx_test1 on new (test)",
+					"create index idx_test2 on new (missing)"
+				]
+			}`),
+			Headers: map[string]string{
+				"Authorization": "eyJhbGciOiJIUzI1NiJ9.eyJpZCI6InN5d2JoZWNuaDQ2cmhtMCIsInR5cGUiOiJhdXRoIiwiY29sbGVjdGlvbklkIjoicGJjXzMxNDI2MzU4MjMiLCJleHAiOjI1MjQ2MDQ0NjEsInJlZnJlc2hhYmxlIjp0cnVlfQ.UXgO3j-0BumcugrFjbd7j0M4MQvbrLggLlcu_YNGjoY",
+			},
+			ExpectedStatus: 400,
+			ExpectedContent: []string{
+				`"data":{`,
+				`"indexes":{"1":{"code":"`,
+			},
+			ExpectedEvents: map[string]int{
+				"*":                            0,
+				"OnCollectionCreateRequest":    1,
+				"OnCollectionCreate":           1,
+				"OnCollectionCreateExecute":    1,
+				"OnCollectionAfterCreateError": 1,
+				"OnCollectionValidate":         1,
+				"OnModelCreate":                1,
+				"OnModelCreateExecute":         1,
+				"OnModelAfterCreateError":      1,
+				"OnModelValidate":              1,
+			},
+		},
+		{
+			Name:   "creating base collection with index name from another collection",
+			Method: http.MethodPost,
+			URL:    "/api/collections",
+			Body: strings.NewReader(`{
+				"name":"new",
+				"type":"base",
+				"fields":[
+					{"type":"text","name":"test"}
+				],
+				"indexes": [
+					"create index exist_test on new (test)"
+				]
+			}`),
+			Headers: map[string]string{
+				"Authorization": "eyJhbGciOiJIUzI1NiJ9.eyJpZCI6InN5d2JoZWNuaDQ2cmhtMCIsInR5cGUiOiJhdXRoIiwiY29sbGVjdGlvbklkIjoicGJjXzMxNDI2MzU4MjMiLCJleHAiOjI1MjQ2MDQ0NjEsInJlZnJlc2hhYmxlIjp0cnVlfQ.UXgO3j-0BumcugrFjbd7j0M4MQvbrLggLlcu_YNGjoY",
+			},
+			BeforeTestFunc: func(t testing.TB, app *tests.TestApp, e *core.ServeEvent) {
+				demo1, err := app.FindCollectionByNameOrId("demo1")
+				if err != nil {
+					t.Fatal(err)
+				}
+				demo1.AddIndex("exist_test", false, "updated", "")
+				if err = app.Save(demo1); err != nil {
+					t.Fatal(err)
+				}
+			},
+			ExpectedStatus: 400,
+			ExpectedContent: []string{
+				`"data":{`,
+				`"indexes":{`,
+				`"0":{"code":"validation_existing_index_name"`,
+			},
+			ExpectedEvents: map[string]int{
+				"*":                            0,
+				"OnCollectionCreateRequest":    1,
+				"OnCollectionCreate":           1,
+				"OnCollectionAfterCreateError": 1,
+				"OnCollectionValidate":         1,
+				"OnModelCreate":                1,
+				"OnModelAfterCreateError":      1,
+				"OnModelValidate":              1,
+			},
+		},
+		{
+			Name:   "creating base collection with 2 indexes using the same name",
+			Method: http.MethodPost,
+			URL:    "/api/collections",
+			Body: strings.NewReader(`{
+				"name":"new",
+				"type":"base",
+				"indexes": [
+					"create index duplicate_idx on new (created)",
+					"create index duplicate_idx on new (updated)"
+				]
+			}`),
+			Headers: map[string]string{
+				"Authorization": "eyJhbGciOiJIUzI1NiJ9.eyJpZCI6InN5d2JoZWNuaDQ2cmhtMCIsInR5cGUiOiJhdXRoIiwiY29sbGVjdGlvbklkIjoicGJjXzMxNDI2MzU4MjMiLCJleHAiOjI1MjQ2MDQ0NjEsInJlZnJlc2hhYmxlIjp0cnVlfQ.UXgO3j-0BumcugrFjbd7j0M4MQvbrLggLlcu_YNGjoY",
+			},
+			ExpectedStatus: 400,
+			ExpectedContent: []string{
+				`"data":{`,
+				`"indexes":{`,
+				`"1":{"code":"validation_duplicated_index_name"`,
+			},
+			ExpectedEvents: map[string]int{
+				"*":                            0,
+				"OnCollectionCreateRequest":    1,
+				"OnCollectionCreate":           1,
+				"OnCollectionAfterCreateError": 1,
+				"OnCollectionValidate":         1,
+				"OnModelCreate":                1,
+				"OnModelAfterCreateError":      1,
+				"OnModelValidate":              1,
+			},
+		},
+		{
+			Name:   "creating base collection with valid indexes (+ random table name)",
+			Method: http.MethodPost,
+			URL:    "/api/collections",
+			Body: strings.NewReader(`{
+				"name":"new",
+				"type":"base",
+				"fields":[
+					{"type":"text","name":"test"}
+				],
+				"indexes": [
+					"create index idx_test1 on new (test)",
+					"create index idx_test2 on anything (id, test)"
+				]
+			}`),
+			Headers: map[string]string{
+				"Authorization": "eyJhbGciOiJIUzI1NiJ9.eyJpZCI6InN5d2JoZWNuaDQ2cmhtMCIsInR5cGUiOiJhdXRoIiwiY29sbGVjdGlvbklkIjoicGJjXzMxNDI2MzU4MjMiLCJleHAiOjI1MjQ2MDQ0NjEsInJlZnJlc2hhYmxlIjp0cnVlfQ.UXgO3j-0BumcugrFjbd7j0M4MQvbrLggLlcu_YNGjoY",
+			},
+			ExpectedStatus: 200,
+			ExpectedContent: []string{
+				`"name":"new"`,
+				`"type":"base"`,
+				`"indexes":[`,
+				`idx_test1`,
+				`idx_test2`,
+			},
+			ExpectedEvents: map[string]int{
+				"*":                              0,
+				"OnCollectionCreateRequest":      1,
+				"OnCollectionCreate":             1,
+				"OnCollectionCreateExecute":      1,
+				"OnCollectionAfterCreateSuccess": 1,
+				"OnCollectionValidate":           1,
+				"OnModelCreate":                  1,
+				"OnModelCreateExecute":           1,
+				"OnModelAfterCreateSuccess":      1,
+				"OnModelValidate":                1,
+			},
+			AfterTestFunc: func(t testing.TB, app *tests.TestApp, res *http.Response) {
+				indexes, err := app.TableIndexes("new")
+				if err != nil {
+					t.Fatal(err)
+				}
+
+				expected := []string{"idx_test1", "idx_test2"}
+				if len(indexes) != len(expected) {
+					t.Fatalf("Expected %d indexes, got %d\n%v", len(expected), len(indexes), indexes)
+				}
+				for name := range indexes {
+					if !list.ExistInSlice(name, expected) {
+						t.Fatalf("Missing index %q", name)
+					}
+				}
 			},
 		},
 	}
@@ -523,42 +917,47 @@ func TestCollectionCreate(t *testing.T) {
 }
 
 func TestCollectionUpdate(t *testing.T) {
+	t.Parallel()
+
 	scenarios := []tests.ApiScenario{
 		{
 			Name:            "unauthorized",
 			Method:          http.MethodPatch,
-			Url:             "/api/collections/demo1",
+			URL:             "/api/collections/demo1",
 			ExpectedStatus:  401,
 			ExpectedContent: []string{`"data":{}`},
+			ExpectedEvents:  map[string]int{"*": 0},
 		},
 		{
-			Name:   "authorized as user",
+			Name:   "authorized as regular user",
 			Method: http.MethodPatch,
-			Url:    "/api/collections/demo1",
-			RequestHeaders: map[string]string{
-				"Authorization": "eyJhbGciOiJIUzI1NiJ9.eyJpZCI6IjRxMXhsY2xtZmxva3UzMyIsInR5cGUiOiJhdXRoUmVjb3JkIiwiY29sbGVjdGlvbklkIjoiX3BiX3VzZXJzX2F1dGhfIiwiZXhwIjoyMjA4OTg1MjYxfQ.UwD8JvkbQtXpymT09d7J6fdA0aP9g4FJ1GPh_ggEkzc",
+			URL:    "/api/collections/demo1",
+			Headers: map[string]string{
+				"Authorization": "eyJhbGciOiJIUzI1NiJ9.eyJpZCI6IjRxMXhsY2xtZmxva3UzMyIsInR5cGUiOiJhdXRoIiwiY29sbGVjdGlvbklkIjoiX3BiX3VzZXJzX2F1dGhfIiwiZXhwIjoyNTI0NjA0NDYxLCJyZWZyZXNoYWJsZSI6dHJ1ZX0.ZT3F0Z3iM-xbGgSG3LEKiEzHrPHr8t8IuHLZGGNuxLo",
 			},
-			ExpectedStatus:  401,
+			ExpectedStatus:  403,
 			ExpectedContent: []string{`"data":{}`},
+			ExpectedEvents:  map[string]int{"*": 0},
 		},
 		{
-			Name:   "authorized as admin + missing collection",
+			Name:   "authorized as superuser + missing collection",
 			Method: http.MethodPatch,
-			Url:    "/api/collections/missing",
+			URL:    "/api/collections/missing",
 			Body:   strings.NewReader(`{}`),
-			RequestHeaders: map[string]string{
-				"Authorization": "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpZCI6InN5d2JoZWNuaDQ2cmhtMCIsInR5cGUiOiJhZG1pbiIsImV4cCI6MjIwODk4NTI2MX0.M1m--VOqGyv0d23eeUc0r9xE8ZzHaYVmVFw1VZW6gT8",
+			Headers: map[string]string{
+				"Authorization": "eyJhbGciOiJIUzI1NiJ9.eyJpZCI6InN5d2JoZWNuaDQ2cmhtMCIsInR5cGUiOiJhdXRoIiwiY29sbGVjdGlvbklkIjoicGJjXzMxNDI2MzU4MjMiLCJleHAiOjI1MjQ2MDQ0NjEsInJlZnJlc2hhYmxlIjp0cnVlfQ.UXgO3j-0BumcugrFjbd7j0M4MQvbrLggLlcu_YNGjoY",
 			},
 			ExpectedStatus:  404,
 			ExpectedContent: []string{`"data":{}`},
+			ExpectedEvents:  map[string]int{"*": 0},
 		},
 		{
-			Name:   "authorized as admin + empty body",
+			Name:   "authorized as superuser + empty body",
 			Method: http.MethodPatch,
-			Url:    "/api/collections/demo1",
+			URL:    "/api/collections/demo1",
 			Body:   strings.NewReader(`{}`),
-			RequestHeaders: map[string]string{
-				"Authorization": "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpZCI6InN5d2JoZWNuaDQ2cmhtMCIsInR5cGUiOiJhZG1pbiIsImV4cCI6MjIwODk4NTI2MX0.M1m--VOqGyv0d23eeUc0r9xE8ZzHaYVmVFw1VZW6gT8",
+			Headers: map[string]string{
+				"Authorization": "eyJhbGciOiJIUzI1NiJ9.eyJpZCI6InN5d2JoZWNuaDQ2cmhtMCIsInR5cGUiOiJhdXRoIiwiY29sbGVjdGlvbklkIjoicGJjXzMxNDI2MzU4MjMiLCJleHAiOjI1MjQ2MDQ0NjEsInJlZnJlc2hhYmxlIjp0cnVlfQ.UXgO3j-0BumcugrFjbd7j0M4MQvbrLggLlcu_YNGjoY",
 			},
 			ExpectedStatus: 200,
 			ExpectedContent: []string{
@@ -566,22 +965,48 @@ func TestCollectionUpdate(t *testing.T) {
 				`"name":"demo1"`,
 			},
 			ExpectedEvents: map[string]int{
-				"OnCollectionAfterUpdateRequest":  1,
-				"OnCollectionBeforeUpdateRequest": 1,
-				"OnModelAfterUpdate":              1,
-				"OnModelBeforeUpdate":             1,
+				"*":                              0,
+				"OnCollectionUpdateRequest":      1,
+				"OnCollectionUpdate":             1,
+				"OnCollectionUpdateExecute":      1,
+				"OnCollectionAfterUpdateSuccess": 1,
+				"OnCollectionValidate":           1,
+				"OnModelUpdate":                  1,
+				"OnModelUpdateExecute":           1,
+				"OnModelAfterUpdateSuccess":      1,
+				"OnModelValidate":                1,
 			},
 		},
 		{
-			Name:   "authorized as admin + invalid data (eg. existing name)",
+			Name:   "OnCollectionAfterUpdateSuccessRequest error response",
 			Method: http.MethodPatch,
-			Url:    "/api/collections/demo1",
+			URL:    "/api/collections/demo1",
+			Body:   strings.NewReader(`{}`),
+			Headers: map[string]string{
+				"Authorization": "eyJhbGciOiJIUzI1NiJ9.eyJpZCI6InN5d2JoZWNuaDQ2cmhtMCIsInR5cGUiOiJhdXRoIiwiY29sbGVjdGlvbklkIjoicGJjXzMxNDI2MzU4MjMiLCJleHAiOjI1MjQ2MDQ0NjEsInJlZnJlc2hhYmxlIjp0cnVlfQ.UXgO3j-0BumcugrFjbd7j0M4MQvbrLggLlcu_YNGjoY",
+			},
+			BeforeTestFunc: func(t testing.TB, app *tests.TestApp, e *core.ServeEvent) {
+				app.OnCollectionUpdateRequest().BindFunc(func(e *core.CollectionRequestEvent) error {
+					return errors.New("error")
+				})
+			},
+			ExpectedStatus:  400,
+			ExpectedContent: []string{`"data":{}`},
+			ExpectedEvents: map[string]int{
+				"*":                         0,
+				"OnCollectionUpdateRequest": 1,
+			},
+		},
+		{
+			Name:   "authorized as superuser + invalid data (eg. existing name)",
+			Method: http.MethodPatch,
+			URL:    "/api/collections/demo1",
 			Body: strings.NewReader(`{
 				"name":"demo2",
 				"type":"auth"
 			}`),
-			RequestHeaders: map[string]string{
-				"Authorization": "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpZCI6InN5d2JoZWNuaDQ2cmhtMCIsInR5cGUiOiJhZG1pbiIsImV4cCI6MjIwODk4NTI2MX0.M1m--VOqGyv0d23eeUc0r9xE8ZzHaYVmVFw1VZW6gT8",
+			Headers: map[string]string{
+				"Authorization": "eyJhbGciOiJIUzI1NiJ9.eyJpZCI6InN5d2JoZWNuaDQ2cmhtMCIsInR5cGUiOiJhdXRoIiwiY29sbGVjdGlvbklkIjoicGJjXzMxNDI2MzU4MjMiLCJleHAiOjI1MjQ2MDQ0NjEsInJlZnJlc2hhYmxlIjp0cnVlfQ.UXgO3j-0BumcugrFjbd7j0M4MQvbrLggLlcu_YNGjoY",
 			},
 			ExpectedStatus: 400,
 			ExpectedContent: []string{
@@ -589,14 +1014,24 @@ func TestCollectionUpdate(t *testing.T) {
 				`"name":{"code":"validation_collection_name_exists"`,
 				`"type":{"code":"validation_collection_type_change"`,
 			},
+			ExpectedEvents: map[string]int{
+				"*":                            0,
+				"OnCollectionUpdateRequest":    1,
+				"OnCollectionUpdate":           1,
+				"OnCollectionAfterUpdateError": 1,
+				"OnCollectionValidate":         1,
+				"OnModelUpdate":                1,
+				"OnModelAfterUpdateError":      1,
+				"OnModelValidate":              1,
+			},
 		},
 		{
-			Name:   "authorized as admin + valid data",
+			Name:   "authorized as superuser + valid data",
 			Method: http.MethodPatch,
-			Url:    "/api/collections/demo1",
+			URL:    "/api/collections/demo1",
 			Body:   strings.NewReader(`{"name":"new"}`),
-			RequestHeaders: map[string]string{
-				"Authorization": "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpZCI6InN5d2JoZWNuaDQ2cmhtMCIsInR5cGUiOiJhZG1pbiIsImV4cCI6MjIwODk4NTI2MX0.M1m--VOqGyv0d23eeUc0r9xE8ZzHaYVmVFw1VZW6gT8",
+			Headers: map[string]string{
+				"Authorization": "eyJhbGciOiJIUzI1NiJ9.eyJpZCI6InN5d2JoZWNuaDQ2cmhtMCIsInR5cGUiOiJhdXRoIiwiY29sbGVjdGlvbklkIjoicGJjXzMxNDI2MzU4MjMiLCJleHAiOjI1MjQ2MDQ0NjEsInJlZnJlc2hhYmxlIjp0cnVlfQ.UXgO3j-0BumcugrFjbd7j0M4MQvbrLggLlcu_YNGjoY",
 			},
 			ExpectedStatus: 200,
 			ExpectedContent: []string{
@@ -604,109 +1039,32 @@ func TestCollectionUpdate(t *testing.T) {
 				`"name":"new"`,
 			},
 			ExpectedEvents: map[string]int{
-				"OnModelBeforeUpdate":             1,
-				"OnModelAfterUpdate":              1,
-				"OnCollectionBeforeUpdateRequest": 1,
-				"OnCollectionAfterUpdateRequest":  1,
+				"*":                              0,
+				"OnCollectionUpdateRequest":      1,
+				"OnCollectionUpdate":             1,
+				"OnCollectionUpdateExecute":      1,
+				"OnCollectionAfterUpdateSuccess": 1,
+				"OnCollectionValidate":           1,
+				"OnModelUpdate":                  1,
+				"OnModelUpdateExecute":           1,
+				"OnModelAfterUpdateSuccess":      1,
+				"OnModelValidate":                1,
 			},
-			AfterTestFunc: func(t *testing.T, app *tests.TestApp, e *echo.Echo) {
+			AfterTestFunc: func(t testing.TB, app *tests.TestApp, res *http.Response) {
 				// check if the record table was renamed
-				if !app.Dao().HasTable("new") {
+				if !app.HasTable("new") {
 					t.Fatal("Couldn't find record table 'new'.")
 				}
 			},
 		},
 		{
-			Name:   "trying to update auth collection with reserved auth fields",
+			Name:   "trying to update collection with reserved fields",
 			Method: http.MethodPatch,
-			Url:    "/api/collections/users",
-			Body: strings.NewReader(`{
-				"schema":[
-					{"type":"text","name":"email"},
-					{"type":"text","name":"username"},
-					{"type":"text","name":"verified"},
-					{"type":"text","name":"emailVisibility"},
-					{"type":"text","name":"lastResetSentAt"},
-					{"type":"text","name":"lastVerificationSentAt"},
-					{"type":"text","name":"tokenKey"},
-					{"type":"text","name":"passwordHash"},
-					{"type":"text","name":"password"},
-					{"type":"text","name":"passwordConfirm"},
-					{"type":"text","name":"oldPassword"}
-				]
-			}`),
-			RequestHeaders: map[string]string{
-				"Authorization": "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpZCI6InN5d2JoZWNuaDQ2cmhtMCIsInR5cGUiOiJhZG1pbiIsImV4cCI6MjIwODk4NTI2MX0.M1m--VOqGyv0d23eeUc0r9xE8ZzHaYVmVFw1VZW6gT8",
-			},
-			ExpectedStatus: 400,
-			ExpectedContent: []string{
-				`"data":{"schema":{`,
-				`"0":{"name":{"code":"validation_reserved_auth_field_name"`,
-				`"1":{"name":{"code":"validation_reserved_auth_field_name"`,
-				`"2":{"name":{"code":"validation_reserved_auth_field_name"`,
-				`"3":{"name":{"code":"validation_reserved_auth_field_name"`,
-				`"4":{"name":{"code":"validation_reserved_auth_field_name"`,
-				`"5":{"name":{"code":"validation_reserved_auth_field_name"`,
-				`"6":{"name":{"code":"validation_reserved_auth_field_name"`,
-				`"7":{"name":{"code":"validation_reserved_auth_field_name"`,
-				`"8":{"name":{"code":"validation_reserved_auth_field_name"`,
-			},
-		},
-		{
-			Name:   "updating base collection with reserved auth fields",
-			Method: http.MethodPatch,
-			Url:    "/api/collections/demo1",
-			Body: strings.NewReader(`{
-				"schema":[
-					{"type":"text","name":"email"},
-					{"type":"text","name":"username"},
-					{"type":"text","name":"verified"},
-					{"type":"text","name":"emailVisibility"},
-					{"type":"text","name":"lastResetSentAt"},
-					{"type":"text","name":"lastVerificationSentAt"},
-					{"type":"text","name":"tokenKey"},
-					{"type":"text","name":"passwordHash"},
-					{"type":"text","name":"password"},
-					{"type":"text","name":"passwordConfirm"},
-					{"type":"text","name":"oldPassword"}
-				]
-			}`),
-			RequestHeaders: map[string]string{
-				"Authorization": "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpZCI6InN5d2JoZWNuaDQ2cmhtMCIsInR5cGUiOiJhZG1pbiIsImV4cCI6MjIwODk4NTI2MX0.M1m--VOqGyv0d23eeUc0r9xE8ZzHaYVmVFw1VZW6gT8",
-			},
-			ExpectedStatus: 200,
-			ExpectedContent: []string{
-				`"name":"demo1"`,
-				`"type":"base"`,
-				`"schema":[{`,
-				`"email"`,
-				`"username"`,
-				`"verified"`,
-				`"emailVisibility"`,
-				`"lastResetSentAt"`,
-				`"lastVerificationSentAt"`,
-				`"tokenKey"`,
-				`"passwordHash"`,
-				`"password"`,
-				`"passwordConfirm"`,
-				`"oldPassword"`,
-			},
-			ExpectedEvents: map[string]int{
-				"OnModelBeforeUpdate":             1,
-				"OnModelAfterUpdate":              1,
-				"OnCollectionBeforeUpdateRequest": 1,
-				"OnCollectionAfterUpdateRequest":  1,
-			},
-		},
-		{
-			Name:   "trying to update base collection with reserved base fields",
-			Method: http.MethodPatch,
-			Url:    "/api/collections/demo1",
+			URL:    "/api/collections/demo1",
 			Body: strings.NewReader(`{
 				"name":"new",
-				"type":"base",
-				"schema":[
-					{"type":"text","name":"id"},
+				"fields":[
+					{"type":"text","name":"id","id":"_pbf_text_id_"},
 					{"type":"text","name":"created"},
 					{"type":"text","name":"updated"},
 					{"type":"text","name":"expand"},
@@ -714,34 +1072,302 @@ func TestCollectionUpdate(t *testing.T) {
 					{"type":"text","name":"collectionName"}
 				]
 			}`),
-			RequestHeaders: map[string]string{
-				"Authorization": "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpZCI6InN5d2JoZWNuaDQ2cmhtMCIsInR5cGUiOiJhZG1pbiIsImV4cCI6MjIwODk4NTI2MX0.M1m--VOqGyv0d23eeUc0r9xE8ZzHaYVmVFw1VZW6gT8",
+			Headers: map[string]string{
+				"Authorization": "eyJhbGciOiJIUzI1NiJ9.eyJpZCI6InN5d2JoZWNuaDQ2cmhtMCIsInR5cGUiOiJhdXRoIiwiY29sbGVjdGlvbklkIjoicGJjXzMxNDI2MzU4MjMiLCJleHAiOjI1MjQ2MDQ0NjEsInJlZnJlc2hhYmxlIjp0cnVlfQ.UXgO3j-0BumcugrFjbd7j0M4MQvbrLggLlcu_YNGjoY",
 			},
 			ExpectedStatus: 400,
 			ExpectedContent: []string{
-				`"data":{"schema":{`,
-				`"0":{"name":{"code":"validation_not_in_invalid`,
-				`"1":{"name":{"code":"validation_not_in_invalid`,
-				`"2":{"name":{"code":"validation_not_in_invalid`,
+				`"data":{"fields":{`,
 				`"3":{"name":{"code":"validation_not_in_invalid`,
 				`"4":{"name":{"code":"validation_not_in_invalid`,
 				`"5":{"name":{"code":"validation_not_in_invalid`,
+			},
+			NotExpectedContent: []string{
+				`"0":`,
+				`"1":`,
+				`"2":`,
+			},
+			ExpectedEvents: map[string]int{
+				"*":                            0,
+				"OnCollectionUpdateRequest":    1,
+				"OnCollectionUpdate":           1,
+				"OnCollectionAfterUpdateError": 1,
+				"OnCollectionValidate":         1,
+				"OnModelUpdate":                1,
+				"OnModelAfterUpdateError":      1,
+				"OnModelValidate":              1,
+			},
+		},
+		{
+			Name:   "trying to update collection with changed/removed system fields",
+			Method: http.MethodPatch,
+			URL:    "/api/collections/demo1",
+			Body: strings.NewReader(`{
+				"name":"new",
+				"fields":[
+					{"type":"text","name":"created"}
+				]
+			}`),
+			Headers: map[string]string{
+				"Authorization": "eyJhbGciOiJIUzI1NiJ9.eyJpZCI6InN5d2JoZWNuaDQ2cmhtMCIsInR5cGUiOiJhdXRoIiwiY29sbGVjdGlvbklkIjoicGJjXzMxNDI2MzU4MjMiLCJleHAiOjI1MjQ2MDQ0NjEsInJlZnJlc2hhYmxlIjp0cnVlfQ.UXgO3j-0BumcugrFjbd7j0M4MQvbrLggLlcu_YNGjoY",
+			},
+			ExpectedStatus: 400,
+			ExpectedContent: []string{
+				`"data":{"fields":{`,
+				`"code":"validation_system_field_change"`,
+			},
+			ExpectedEvents: map[string]int{
+				"*":                            0,
+				"OnCollectionUpdateRequest":    1,
+				"OnCollectionUpdate":           1,
+				"OnCollectionAfterUpdateError": 1,
+				"OnCollectionValidate":         1,
+				"OnModelUpdate":                1,
+				"OnModelAfterUpdateError":      1,
+				"OnModelValidate":              1,
 			},
 		},
 		{
 			Name:   "trying to update auth collection with invalid options",
 			Method: http.MethodPatch,
-			Url:    "/api/collections/users",
+			URL:    "/api/collections/users",
 			Body: strings.NewReader(`{
-				"options":{"minPasswordLength": 4}
+				"passwordAuth":{"identityFields": ["missing"]}
 			}`),
-			RequestHeaders: map[string]string{
-				"Authorization": "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpZCI6InN5d2JoZWNuaDQ2cmhtMCIsInR5cGUiOiJhZG1pbiIsImV4cCI6MjIwODk4NTI2MX0.M1m--VOqGyv0d23eeUc0r9xE8ZzHaYVmVFw1VZW6gT8",
+			Headers: map[string]string{
+				"Authorization": "eyJhbGciOiJIUzI1NiJ9.eyJpZCI6InN5d2JoZWNuaDQ2cmhtMCIsInR5cGUiOiJhdXRoIiwiY29sbGVjdGlvbklkIjoicGJjXzMxNDI2MzU4MjMiLCJleHAiOjI1MjQ2MDQ0NjEsInJlZnJlc2hhYmxlIjp0cnVlfQ.UXgO3j-0BumcugrFjbd7j0M4MQvbrLggLlcu_YNGjoY",
 			},
 			ExpectedStatus: 400,
 			ExpectedContent: []string{
 				`"data":{`,
-				`"options":{"minPasswordLength":{"code":"validation_min_greater_equal_than_required"`,
+				`"passwordAuth":{"identityFields":{"code":"validation_missing_field"`,
+			},
+			ExpectedEvents: map[string]int{
+				"*":                            0,
+				"OnCollectionUpdateRequest":    1,
+				"OnCollectionUpdate":           1,
+				"OnCollectionAfterUpdateError": 1,
+				"OnCollectionValidate":         1,
+				"OnModelUpdate":                1,
+				"OnModelAfterUpdateError":      1,
+				"OnModelValidate":              1,
+			},
+		},
+
+		// view
+		// -----------------------------------------------------------
+		{
+			Name:   "trying to update view collection with invalid options",
+			Method: http.MethodPatch,
+			URL:    "/api/collections/view1",
+			Body: strings.NewReader(`{
+				"fields":[{"type":"text","id":"12345789","name":"ignored!@#$"}],
+				"viewQuery":"invalid"
+			}`),
+			Headers: map[string]string{
+				"Authorization": "eyJhbGciOiJIUzI1NiJ9.eyJpZCI6InN5d2JoZWNuaDQ2cmhtMCIsInR5cGUiOiJhdXRoIiwiY29sbGVjdGlvbklkIjoicGJjXzMxNDI2MzU4MjMiLCJleHAiOjI1MjQ2MDQ0NjEsInJlZnJlc2hhYmxlIjp0cnVlfQ.UXgO3j-0BumcugrFjbd7j0M4MQvbrLggLlcu_YNGjoY",
+			},
+			ExpectedStatus: 400,
+			ExpectedContent: []string{
+				`"data":{`,
+				`"viewQuery":{"code":"validation_invalid_view_query"`,
+			},
+			ExpectedEvents: map[string]int{
+				"*":                            0,
+				"OnCollectionUpdateRequest":    1,
+				"OnCollectionUpdate":           1,
+				"OnCollectionAfterUpdateError": 1,
+				"OnCollectionValidate":         1,
+				"OnModelUpdate":                1,
+				"OnModelAfterUpdateError":      1,
+				"OnModelValidate":              1,
+			},
+		},
+		{
+			Name:   "updating view collection",
+			Method: http.MethodPatch,
+			URL:    "/api/collections/view2",
+			Body: strings.NewReader(`{
+				"name":"view2_update",
+				"fields":[{"type":"text","id":"12345789","name":"ignored!@#$"}],
+				"viewQuery": "select 2 as id, created, updated, email from ` + core.CollectionNameSuperusers + `"
+			}`),
+			Headers: map[string]string{
+				"Authorization": "eyJhbGciOiJIUzI1NiJ9.eyJpZCI6InN5d2JoZWNuaDQ2cmhtMCIsInR5cGUiOiJhdXRoIiwiY29sbGVjdGlvbklkIjoicGJjXzMxNDI2MzU4MjMiLCJleHAiOjI1MjQ2MDQ0NjEsInJlZnJlc2hhYmxlIjp0cnVlfQ.UXgO3j-0BumcugrFjbd7j0M4MQvbrLggLlcu_YNGjoY",
+			},
+			ExpectedStatus: 200,
+			ExpectedContent: []string{
+				`"name":"view2_update"`,
+				`"type":"view"`,
+				`"fields":[{`,
+				`"name":"email"`,
+				`"name":"id"`,
+				`"name":"created"`,
+				`"name":"updated"`,
+			},
+			ExpectedEvents: map[string]int{
+				"*":                              0,
+				"OnCollectionUpdateRequest":      1,
+				"OnCollectionUpdate":             1,
+				"OnCollectionUpdateExecute":      1,
+				"OnCollectionAfterUpdateSuccess": 1,
+				"OnCollectionValidate":           1,
+				"OnModelUpdate":                  1,
+				"OnModelUpdateExecute":           1,
+				"OnModelAfterUpdateSuccess":      1,
+				"OnModelValidate":                1,
+			},
+		},
+
+		// indexes
+		// -----------------------------------------------------------
+		{
+			Name:   "updating base collection with invalid indexes",
+			Method: http.MethodPatch,
+			URL:    "/api/collections/demo2",
+			Body: strings.NewReader(`{
+				"indexes": [
+					"create unique idx_test1 on demo1 (text)",
+					"create index idx_test2 on demo2 (id, title)"
+				]
+			}`),
+			Headers: map[string]string{
+				"Authorization": "eyJhbGciOiJIUzI1NiJ9.eyJpZCI6InN5d2JoZWNuaDQ2cmhtMCIsInR5cGUiOiJhdXRoIiwiY29sbGVjdGlvbklkIjoicGJjXzMxNDI2MzU4MjMiLCJleHAiOjI1MjQ2MDQ0NjEsInJlZnJlc2hhYmxlIjp0cnVlfQ.UXgO3j-0BumcugrFjbd7j0M4MQvbrLggLlcu_YNGjoY",
+			},
+			ExpectedStatus: 400,
+			ExpectedContent: []string{
+				`"data":{`,
+				`"indexes":{"0":{"code":"`,
+			},
+			ExpectedEvents: map[string]int{
+				"*":                            0,
+				"OnCollectionUpdateRequest":    1,
+				"OnCollectionUpdate":           1,
+				"OnCollectionAfterUpdateError": 1,
+				"OnCollectionValidate":         1,
+				"OnModelUpdate":                1,
+				"OnModelAfterUpdateError":      1,
+				"OnModelValidate":              1,
+			},
+		},
+
+		{
+			Name:   "updating base collection with index name from another collection",
+			Method: http.MethodPatch,
+			URL:    "/api/collections/demo2",
+			Body: strings.NewReader(`{
+				"indexes": [
+					"create index exist_test on new (test)"
+				]
+			}`),
+			Headers: map[string]string{
+				"Authorization": "eyJhbGciOiJIUzI1NiJ9.eyJpZCI6InN5d2JoZWNuaDQ2cmhtMCIsInR5cGUiOiJhdXRoIiwiY29sbGVjdGlvbklkIjoicGJjXzMxNDI2MzU4MjMiLCJleHAiOjI1MjQ2MDQ0NjEsInJlZnJlc2hhYmxlIjp0cnVlfQ.UXgO3j-0BumcugrFjbd7j0M4MQvbrLggLlcu_YNGjoY",
+			},
+			BeforeTestFunc: func(t testing.TB, app *tests.TestApp, e *core.ServeEvent) {
+				demo1, err := app.FindCollectionByNameOrId("demo1")
+				if err != nil {
+					t.Fatal(err)
+				}
+				demo1.AddIndex("exist_test", false, "updated", "")
+				if err = app.Save(demo1); err != nil {
+					t.Fatal(err)
+				}
+			},
+			ExpectedStatus: 400,
+			ExpectedContent: []string{
+				`"data":{`,
+				`"indexes":{`,
+				`"0":{"code":"validation_existing_index_name"`,
+			},
+			ExpectedEvents: map[string]int{
+				"*":                            0,
+				"OnCollectionUpdateRequest":    1,
+				"OnCollectionUpdate":           1,
+				"OnCollectionAfterUpdateError": 1,
+				"OnCollectionValidate":         1,
+				"OnModelUpdate":                1,
+				"OnModelAfterUpdateError":      1,
+				"OnModelValidate":              1,
+			},
+		},
+		{
+			Name:   "updating base collection with 2 indexes using the same name",
+			Method: http.MethodPatch,
+			URL:    "/api/collections/demo2",
+			Body: strings.NewReader(`{
+				"indexes": [
+					"create index duplicate_idx on new (created)",
+					"create index duplicate_idx on new (updated)"
+				]
+			}`),
+			Headers: map[string]string{
+				"Authorization": "eyJhbGciOiJIUzI1NiJ9.eyJpZCI6InN5d2JoZWNuaDQ2cmhtMCIsInR5cGUiOiJhdXRoIiwiY29sbGVjdGlvbklkIjoicGJjXzMxNDI2MzU4MjMiLCJleHAiOjI1MjQ2MDQ0NjEsInJlZnJlc2hhYmxlIjp0cnVlfQ.UXgO3j-0BumcugrFjbd7j0M4MQvbrLggLlcu_YNGjoY",
+			},
+			ExpectedStatus: 400,
+			ExpectedContent: []string{
+				`"data":{`,
+				`"indexes":{`,
+				`"1":{"code":"validation_duplicated_index_name"`,
+			},
+			ExpectedEvents: map[string]int{
+				"*":                            0,
+				"OnCollectionUpdateRequest":    1,
+				"OnCollectionUpdate":           1,
+				"OnCollectionAfterUpdateError": 1,
+				"OnCollectionValidate":         1,
+				"OnModelUpdate":                1,
+				"OnModelAfterUpdateError":      1,
+				"OnModelValidate":              1,
+			},
+		},
+
+		{
+			Name:   "updating base collection with valid indexes (+ random table name)",
+			Method: http.MethodPatch,
+			URL:    "/api/collections/demo2",
+			Body: strings.NewReader(`{
+				"indexes": [
+					"create unique index idx_test1 on demo2 (title)",
+					"create index idx_test2 on anything (active)"
+				]
+			}`),
+			Headers: map[string]string{
+				"Authorization": "eyJhbGciOiJIUzI1NiJ9.eyJpZCI6InN5d2JoZWNuaDQ2cmhtMCIsInR5cGUiOiJhdXRoIiwiY29sbGVjdGlvbklkIjoicGJjXzMxNDI2MzU4MjMiLCJleHAiOjI1MjQ2MDQ0NjEsInJlZnJlc2hhYmxlIjp0cnVlfQ.UXgO3j-0BumcugrFjbd7j0M4MQvbrLggLlcu_YNGjoY",
+			},
+			ExpectedStatus: 200,
+			ExpectedContent: []string{
+				`"name":"demo2"`,
+				`"indexes":[`,
+				`idx_test1`,
+				`idx_test2`,
+			},
+			ExpectedEvents: map[string]int{
+				"*":                              0,
+				"OnCollectionUpdateRequest":      1,
+				"OnCollectionUpdate":             1,
+				"OnCollectionUpdateExecute":      1,
+				"OnCollectionAfterUpdateSuccess": 1,
+				"OnCollectionValidate":           1,
+				"OnModelUpdate":                  1,
+				"OnModelUpdateExecute":           1,
+				"OnModelAfterUpdateSuccess":      1,
+				"OnModelValidate":                1,
+			},
+			AfterTestFunc: func(t testing.TB, app *tests.TestApp, res *http.Response) {
+				indexes, err := app.TableIndexes("demo2")
+				if err != nil {
+					t.Fatal(err)
+				}
+
+				expected := []string{"idx_test1", "idx_test2"}
+				if len(indexes) != len(expected) {
+					t.Fatalf("Expected %d indexes, got %d\n%v", len(expected), len(indexes), indexes)
+				}
+				for name := range indexes {
+					if !list.ExistInSlice(name, expected) {
+						t.Fatalf("Missing index %q", name)
+					}
+				}
 			},
 		},
 	}
@@ -751,270 +1377,134 @@ func TestCollectionUpdate(t *testing.T) {
 	}
 }
 
-func TestCollectionImport(t *testing.T) {
+func TestCollectionScaffolds(t *testing.T) {
+	t.Parallel()
+
 	scenarios := []tests.ApiScenario{
 		{
 			Name:            "unauthorized",
-			Method:          http.MethodPut,
-			Url:             "/api/collections/import",
+			Method:          http.MethodGet,
+			URL:             "/api/collections/meta/scaffolds",
 			ExpectedStatus:  401,
 			ExpectedContent: []string{`"data":{}`},
+			ExpectedEvents:  map[string]int{"*": 0},
 		},
 		{
-			Name:   "authorized as user",
-			Method: http.MethodPut,
-			Url:    "/api/collections/import",
-			RequestHeaders: map[string]string{
-				"Authorization": "eyJhbGciOiJIUzI1NiJ9.eyJpZCI6IjRxMXhsY2xtZmxva3UzMyIsInR5cGUiOiJhdXRoUmVjb3JkIiwiY29sbGVjdGlvbklkIjoiX3BiX3VzZXJzX2F1dGhfIiwiZXhwIjoyMjA4OTg1MjYxfQ.UwD8JvkbQtXpymT09d7J6fdA0aP9g4FJ1GPh_ggEkzc",
+			Name:   "authorized as regular user",
+			Method: http.MethodGet,
+			URL:    "/api/collections/meta/scaffolds",
+			Headers: map[string]string{
+				"Authorization": "eyJhbGciOiJIUzI1NiJ9.eyJpZCI6IjRxMXhsY2xtZmxva3UzMyIsInR5cGUiOiJhdXRoIiwiY29sbGVjdGlvbklkIjoiX3BiX3VzZXJzX2F1dGhfIiwiZXhwIjoyNTI0NjA0NDYxLCJyZWZyZXNoYWJsZSI6dHJ1ZX0.ZT3F0Z3iM-xbGgSG3LEKiEzHrPHr8t8IuHLZGGNuxLo",
 			},
+			ExpectedStatus:  403,
+			ExpectedContent: []string{`"data":{}`},
+			ExpectedEvents:  map[string]int{"*": 0},
+		},
+		{
+			Name:   "authorized as superuser",
+			Method: http.MethodGet,
+			URL:    "/api/collections/meta/scaffolds",
+			Headers: map[string]string{
+				"Authorization": "eyJhbGciOiJIUzI1NiJ9.eyJpZCI6InN5d2JoZWNuaDQ2cmhtMCIsInR5cGUiOiJhdXRoIiwiY29sbGVjdGlvbklkIjoicGJjXzMxNDI2MzU4MjMiLCJleHAiOjI1MjQ2MDQ0NjEsInJlZnJlc2hhYmxlIjp0cnVlfQ.UXgO3j-0BumcugrFjbd7j0M4MQvbrLggLlcu_YNGjoY",
+			},
+			ExpectedStatus: 200,
+			ExpectedContent: []string{
+				`"id":""`,
+				`"name":""`,
+				`"auth":{`,
+				`"base":{`,
+				`"view":{`,
+				`"type":"auth"`,
+				`"type":"base"`,
+				`"type":"view"`,
+				`"fields":[{`,
+				`"fields":[{`,
+				`"id":"text3208210256"`,
+			},
+		},
+	}
+
+	for _, scenario := range scenarios {
+		scenario.Test(t)
+	}
+}
+
+func TestCollectionTruncate(t *testing.T) {
+	t.Parallel()
+
+	scenarios := []tests.ApiScenario{
+		{
+			Name:            "unauthorized",
+			Method:          http.MethodDelete,
+			URL:             "/api/collections/demo5/truncate",
 			ExpectedStatus:  401,
 			ExpectedContent: []string{`"data":{}`},
+			ExpectedEvents:  map[string]int{"*": 0},
 		},
 		{
-			Name:   "authorized as admin + empty collections",
-			Method: http.MethodPut,
-			Url:    "/api/collections/import",
-			Body:   strings.NewReader(`{"collections":[]}`),
-			RequestHeaders: map[string]string{
-				"Authorization": "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpZCI6InN5d2JoZWNuaDQ2cmhtMCIsInR5cGUiOiJhZG1pbiIsImV4cCI6MjIwODk4NTI2MX0.M1m--VOqGyv0d23eeUc0r9xE8ZzHaYVmVFw1VZW6gT8",
+			Name:   "authorized as regular user",
+			Method: http.MethodDelete,
+			URL:    "/api/collections/demo5/truncate",
+			Headers: map[string]string{
+				"Authorization": "eyJhbGciOiJIUzI1NiJ9.eyJpZCI6IjRxMXhsY2xtZmxva3UzMyIsInR5cGUiOiJhdXRoIiwiY29sbGVjdGlvbklkIjoiX3BiX3VzZXJzX2F1dGhfIiwiZXhwIjoyNTI0NjA0NDYxLCJyZWZyZXNoYWJsZSI6dHJ1ZX0.ZT3F0Z3iM-xbGgSG3LEKiEzHrPHr8t8IuHLZGGNuxLo",
 			},
-			ExpectedStatus: 400,
-			ExpectedContent: []string{
-				`"data":{`,
-				`"collections":{"code":"validation_required"`,
-			},
-			AfterTestFunc: func(t *testing.T, app *tests.TestApp, e *echo.Echo) {
-				collections := []*models.Collection{}
-				if err := app.Dao().CollectionQuery().All(&collections); err != nil {
-					t.Fatal(err)
-				}
-				expected := 8
-				if len(collections) != expected {
-					t.Fatalf("Expected %d collections, got %d", expected, len(collections))
-				}
-			},
+			ExpectedStatus:  403,
+			ExpectedContent: []string{`"data":{}`},
+			ExpectedEvents:  map[string]int{"*": 0},
 		},
 		{
-			Name:   "authorized as admin + trying to delete system collections",
-			Method: http.MethodPut,
-			Url:    "/api/collections/import",
-			Body:   strings.NewReader(`{"deleteMissing": true, "collections":[{"name": "test123"}]}`),
-			RequestHeaders: map[string]string{
-				"Authorization": "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpZCI6InN5d2JoZWNuaDQ2cmhtMCIsInR5cGUiOiJhZG1pbiIsImV4cCI6MjIwODk4NTI2MX0.M1m--VOqGyv0d23eeUc0r9xE8ZzHaYVmVFw1VZW6gT8",
-			},
-			ExpectedStatus: 400,
-			ExpectedContent: []string{
-				`"data":{`,
-				`"collections":{"code":"collections_import_failure"`,
-			},
-			ExpectedEvents: map[string]int{
-				"OnCollectionsBeforeImportRequest": 1,
-				"OnModelBeforeDelete":              6,
-			},
-			AfterTestFunc: func(t *testing.T, app *tests.TestApp, e *echo.Echo) {
-				collections := []*models.Collection{}
-				if err := app.Dao().CollectionQuery().All(&collections); err != nil {
-					t.Fatal(err)
-				}
-				expected := 8
-				if len(collections) != expected {
-					t.Fatalf("Expected %d collections, got %d", expected, len(collections))
-				}
-			},
-		},
-		{
-			Name:   "authorized as admin + collections validator failure",
-			Method: http.MethodPut,
-			Url:    "/api/collections/import",
-			Body: strings.NewReader(`{
-				"collections":[
-					{
-						"name": "import1",
-						"schema": [
-							{
-							  "id": "koih1lqx",
-							  "name": "test",
-							  "type": "text"
-							}
-						]
-					},
-					{"name": "import2"}
-				]
-			}`),
-			RequestHeaders: map[string]string{
-				"Authorization": "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpZCI6InN5d2JoZWNuaDQ2cmhtMCIsInR5cGUiOiJhZG1pbiIsImV4cCI6MjIwODk4NTI2MX0.M1m--VOqGyv0d23eeUc0r9xE8ZzHaYVmVFw1VZW6gT8",
-			},
-			ExpectedStatus: 400,
-			ExpectedContent: []string{
-				`"data":{`,
-				`"collections":{"code":"collections_import_validate_failure"`,
-			},
-			ExpectedEvents: map[string]int{
-				"OnCollectionsBeforeImportRequest": 1,
-				"OnModelBeforeCreate":              2,
-			},
-			AfterTestFunc: func(t *testing.T, app *tests.TestApp, e *echo.Echo) {
-				collections := []*models.Collection{}
-				if err := app.Dao().CollectionQuery().All(&collections); err != nil {
-					t.Fatal(err)
-				}
-				expected := 8
-				if len(collections) != expected {
-					t.Fatalf("Expected %d collections, got %d", expected, len(collections))
-				}
-			},
-		},
-		{
-			Name:   "authorized as admin + successful collections save",
-			Method: http.MethodPut,
-			Url:    "/api/collections/import",
-			Body: strings.NewReader(`{
-				"collections":[
-					{
-						"name": "import1",
-						"schema": [
-							{
-							  "id": "koih1lqx",
-							  "name": "test",
-							  "type": "text"
-							}
-						]
-					},
-					{
-						"name": "import2",
-						"schema": [
-							{
-							  "id": "koih1lqx",
-							  "name": "test",
-							  "type": "text"
-							}
-						]
-					},
-					{
-						"name": "auth_without_schema",
-						"type": "auth"
-					}
-				]
-			}`),
-			RequestHeaders: map[string]string{
-				"Authorization": "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpZCI6InN5d2JoZWNuaDQ2cmhtMCIsInR5cGUiOiJhZG1pbiIsImV4cCI6MjIwODk4NTI2MX0.M1m--VOqGyv0d23eeUc0r9xE8ZzHaYVmVFw1VZW6gT8",
+			Name:   "authorized as superuser",
+			Method: http.MethodDelete,
+			URL:    "/api/collections/demo5/truncate",
+			Headers: map[string]string{
+				"Authorization": "eyJhbGciOiJIUzI1NiJ9.eyJpZCI6InN5d2JoZWNuaDQ2cmhtMCIsInR5cGUiOiJhdXRoIiwiY29sbGVjdGlvbklkIjoicGJjXzMxNDI2MzU4MjMiLCJleHAiOjI1MjQ2MDQ0NjEsInJlZnJlc2hhYmxlIjp0cnVlfQ.UXgO3j-0BumcugrFjbd7j0M4MQvbrLggLlcu_YNGjoY",
 			},
 			ExpectedStatus: 204,
 			ExpectedEvents: map[string]int{
-				"OnCollectionsBeforeImportRequest": 1,
-				"OnCollectionsAfterImportRequest":  1,
-				"OnModelBeforeCreate":              3,
-				"OnModelAfterCreate":               3,
-			},
-			AfterTestFunc: func(t *testing.T, app *tests.TestApp, e *echo.Echo) {
-				collections := []*models.Collection{}
-				if err := app.Dao().CollectionQuery().All(&collections); err != nil {
-					t.Fatal(err)
-				}
-				expected := 11
-				if len(collections) != expected {
-					t.Fatalf("Expected %d collections, got %d", expected, len(collections))
-				}
+				"*":                          0,
+				"OnModelDelete":              2,
+				"OnModelDeleteExecute":       2,
+				"OnModelAfterDeleteSuccess":  2,
+				"OnRecordDelete":             2,
+				"OnRecordDeleteExecute":      2,
+				"OnRecordAfterDeleteSuccess": 2,
 			},
 		},
 		{
-			Name:   "authorized as admin + successful collections save and old non-system collections deletion",
-			Method: http.MethodPut,
-			Url:    "/api/collections/import",
-			Body: strings.NewReader(`{
-				"deleteMissing": true,
-				"collections":[
-					{
-						"name": "new_import",
-						"schema": [
-							{
-							  "id": "koih1lqx",
-							  "name": "test",
-							  "type": "text"
-							}
-						]
-					},
-					{
-					    "id": "kpv709sk2lqbqk8",
-					    "system": true,
-					    "name": "nologin",
-					    "type": "auth",
-					    "options": {
-					        "allowEmailAuth": false,
-					        "allowOAuth2Auth": false,
-					        "allowUsernameAuth": false,
-					        "exceptEmailDomains": [],
-					        "manageRule": "@request.auth.collectionName = 'users'",
-					        "minPasswordLength": 8,
-					        "onlyEmailDomains": [],
-					        "requireEmail": true
-					    },
-					    "listRule": "",
-					    "viewRule": "",
-					    "createRule": "",
-					    "updateRule": "",
-					    "deleteRule": "",
-					    "schema": [
-					        {
-					            "id": "x8zzktwe",
-					            "name": "name",
-					            "type": "text",
-					            "system": false,
-					            "required": false,
-					            "unique": false,
-					            "options": {
-					                "min": null,
-					                "max": null,
-					                "pattern": ""
-					            }
-					        }
-					    ]
-					},
-					{
-						"id":"wsmn24bux7wo113",
-						"name":"demo1",
-						"schema":[
-							{
-								"id":"_2hlxbmp",
-								"name":"title",
-								"type":"text",
-								"system":false,
-								"required":true,
-								"unique":false,
-								"options":{
-									"min":3,
-									"max":null,
-									"pattern":""
-								}
-							}
-						]
-					}
-				]
-			}`),
-			RequestHeaders: map[string]string{
-				"Authorization": "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpZCI6InN5d2JoZWNuaDQ2cmhtMCIsInR5cGUiOiJhZG1pbiIsImV4cCI6MjIwODk4NTI2MX0.M1m--VOqGyv0d23eeUc0r9xE8ZzHaYVmVFw1VZW6gT8",
+			Name:   "authorized as superuser but collection with required cascade delete references",
+			Method: http.MethodDelete,
+			URL:    "/api/collections/demo3/truncate",
+			Headers: map[string]string{
+				"Authorization": "eyJhbGciOiJIUzI1NiJ9.eyJpZCI6InN5d2JoZWNuaDQ2cmhtMCIsInR5cGUiOiJhdXRoIiwiY29sbGVjdGlvbklkIjoicGJjXzMxNDI2MzU4MjMiLCJleHAiOjI1MjQ2MDQ0NjEsInJlZnJlc2hhYmxlIjp0cnVlfQ.UXgO3j-0BumcugrFjbd7j0M4MQvbrLggLlcu_YNGjoY",
 			},
-			ExpectedStatus: 204,
+			ExpectedStatus:  400,
+			ExpectedContent: []string{`"data":{}`},
 			ExpectedEvents: map[string]int{
-				"OnCollectionsAfterImportRequest":  1,
-				"OnCollectionsBeforeImportRequest": 1,
-				"OnModelBeforeDelete":              6,
-				"OnModelAfterDelete":               6,
-				"OnModelBeforeUpdate":              2,
-				"OnModelAfterUpdate":               2,
-				"OnModelBeforeCreate":              1,
-				"OnModelAfterCreate":               1,
+				"*":                        0,
+				"OnModelDelete":            2,
+				"OnModelDeleteExecute":     2,
+				"OnModelAfterDeleteError":  2,
+				"OnModelUpdate":            2,
+				"OnModelUpdateExecute":     2,
+				"OnModelAfterUpdateError":  2,
+				"OnRecordDelete":           2,
+				"OnRecordDeleteExecute":    2,
+				"OnRecordAfterDeleteError": 2,
+				"OnRecordUpdate":           2,
+				"OnRecordUpdateExecute":    2,
+				"OnRecordAfterUpdateError": 2,
 			},
-			AfterTestFunc: func(t *testing.T, app *tests.TestApp, e *echo.Echo) {
-				collections := []*models.Collection{}
-				if err := app.Dao().CollectionQuery().All(&collections); err != nil {
-					t.Fatal(err)
-				}
-				expected := 3
-				if len(collections) != expected {
-					t.Fatalf("Expected %d collections, got %d", expected, len(collections))
-				}
+		},
+		{
+			Name:   "authorized as superuser trying to truncate view collection",
+			Method: http.MethodDelete,
+			URL:    "/api/collections/view2/truncate",
+			Headers: map[string]string{
+				"Authorization": "eyJhbGciOiJIUzI1NiJ9.eyJpZCI6InN5d2JoZWNuaDQ2cmhtMCIsInR5cGUiOiJhdXRoIiwiY29sbGVjdGlvbklkIjoicGJjXzMxNDI2MzU4MjMiLCJleHAiOjI1MjQ2MDQ0NjEsInJlZnJlc2hhYmxlIjp0cnVlfQ.UXgO3j-0BumcugrFjbd7j0M4MQvbrLggLlcu_YNGjoY",
 			},
+			ExpectedStatus:  400,
+			ExpectedContent: []string{`"data":{}`},
+			ExpectedEvents:  map[string]int{"*": 0},
 		},
 	}
 

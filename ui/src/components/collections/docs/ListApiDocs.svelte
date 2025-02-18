@@ -1,19 +1,23 @@
 <script>
-    import { Collection } from "pocketbase";
     import ApiClient from "@/utils/ApiClient";
     import CommonHelper from "@/utils/CommonHelper";
     import CodeBlock from "@/components/base/CodeBlock.svelte";
     import FilterSyntax from "@/components/collections/docs/FilterSyntax.svelte";
-    import SdkTabs from "@/components/collections/docs/SdkTabs.svelte";
+    import SdkTabs from "@/components/base/SdkTabs.svelte";
+    import FieldsQueryParam from "@/components/collections/docs/FieldsQueryParam.svelte";
 
-    export let collection = new Collection();
+    export let collection;
 
     let responseTab = 200;
     let responses = [];
 
-    $: adminsOnly = collection?.listRule === null;
+    $: fieldNames = CommonHelper.getAllCollectionIdentifiers(collection);
 
-    $: backendAbsUrl = CommonHelper.getApiExampleUrl(ApiClient.baseUrl);
+    $: superusersOnly = collection?.listRule === null;
+
+    $: backendAbsUrl = CommonHelper.getApiExampleUrl(ApiClient.baseURL);
+
+    $: dummyRecord = CommonHelper.dummyCollectionRecord(collection);
 
     $: if (collection?.id) {
         responses.push({
@@ -24,13 +28,10 @@
                     perPage: 30,
                     totalPages: 1,
                     totalItems: 2,
-                    items: [
-                        CommonHelper.dummyCollectionRecord(collection),
-                        CommonHelper.dummyCollectionRecord(collection),
-                    ],
+                    items: [dummyRecord, Object.assign({}, dummyRecord, { id: dummyRecord + "2" })],
                 },
                 null,
-                2
+                2,
             ),
         });
 
@@ -38,20 +39,20 @@
             code: 400,
             body: `
                 {
-                  "code": 400,
+                  "status": 400,
                   "message": "Something went wrong while processing your request. Invalid filter.",
                   "data": {}
                 }
             `,
         });
 
-        if (adminsOnly) {
+        if (superusersOnly) {
             responses.push({
                 code: 403,
                 body: `
                     {
-                      "code": 403,
-                      "message": "Only admins can access this action.",
+                      "status": 403,
+                      "message": "Only superusers can access this action.",
                       "data": {}
                     }
                 `,
@@ -77,12 +78,12 @@
 
         // fetch a paginated records list
         const resultList = await pb.collection('${collection?.name}').getList(1, 50, {
-            filter: 'created >= "2022-01-01 00:00:00" && someField1 != someField2',
+            filter: 'someField1 != someField2',
         });
 
         // you can also fetch all records at once via getFullList
-        const records = await pb.collection('${collection?.name}').getFullList(200 /* batch size */, {
-            sort: '-created',
+        const records = await pb.collection('${collection?.name}').getFullList({
+            sort: '-someField',
         });
 
         // or fetch only the first record that matches the specified filter
@@ -101,13 +102,12 @@
         final resultList = await pb.collection('${collection?.name}').getList(
           page: 1,
           perPage: 50,
-          filter: 'created >= "2022-01-01 00:00:00" && someField1 != someField2',
+          filter: 'someField1 != someField2',
         );
 
         // you can also fetch all records at once via getFullList
         final records = await pb.collection('${collection?.name}').getFullList(
-          batch: 200,
-          sort: '-created',
+          sort: '-someField',
         );
 
         // or fetch only the first record that matches the specified filter
@@ -126,8 +126,8 @@
             /api/collections/<strong>{collection.name}</strong>/records
         </p>
     </div>
-    {#if adminsOnly}
-        <p class="txt-hint txt-sm txt-right">Requires admin <code>Authorization:TOKEN</code> header</p>
+    {#if superusersOnly}
+        <p class="txt-hint txt-sm txt-right">Requires superuser <code>Authorization:TOKEN</code> header</p>
     {/if}
 </div>
 
@@ -170,6 +170,14 @@
                         ?sort=-created,id
                     `}
                 />
+                <p>
+                    <strong>Supported record sort fields:</strong> <br />
+                    <code>@random</code>,
+                    <code>@rowid</code>,
+                    {#each fieldNames as name, i}
+                        <code>{name}</code>{i < fieldNames.length - 1 ? ", " : ""}
+                    {/each}
+                </p>
             </td>
         </tr>
         <tr>
@@ -202,20 +210,40 @@
                 Only the relations to which the request user has permissions to <strong>view</strong> will be expanded.
             </td>
         </tr>
+        <FieldsQueryParam />
+        <tr>
+            <td id="query-page">skipTotal</td>
+            <td>
+                <span class="label">Boolean</span>
+            </td>
+            <td>
+                If it is set the total counts query will be skipped and the response fields
+                <code>totalItems</code> and <code>totalPages</code> will have <code>-1</code> value.
+                <br />
+                This could drastically speed up the search queries when the total counters are not needed or cursor
+                based pagination is used.
+                <br />
+                For optimization purposes, it is set by default for the
+                <code>getFirstListItem()</code>
+                and
+                <code>getFullList()</code> SDKs methods.
+            </td>
+        </tr>
     </tbody>
 </table>
 
 <div class="section-title">Responses</div>
 <div class="tabs">
-    <div class="tabs-header compact left">
+    <div class="tabs-header compact combined left">
         {#each responses as response (response.code)}
-            <div
+            <button
+                type="button"
                 class="tab-item"
                 class:active={responseTab === response.code}
                 on:click={() => (responseTab = response.code)}
             >
                 {response.code}
-            </div>
+            </button>
         {/each}
     </div>
     <div class="tabs-content">

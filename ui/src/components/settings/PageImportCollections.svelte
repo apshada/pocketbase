@@ -1,14 +1,14 @@
 <script>
-    import { tick } from "svelte";
+    import Field from "@/components/base/Field.svelte";
+    import PageWrapper from "@/components/base/PageWrapper.svelte";
+    import ImportPopup from "@/components/settings/ImportPopup.svelte";
+    import SettingsSidebar from "@/components/settings/SettingsSidebar.svelte";
+    import { pageTitle } from "@/stores/app";
+    import { setErrors } from "@/stores/errors";
+    import { addErrorToast } from "@/stores/toasts";
     import ApiClient from "@/utils/ApiClient";
     import CommonHelper from "@/utils/CommonHelper";
-    import { pageTitle } from "@/stores/app";
-    import { addErrorToast } from "@/stores/toasts";
-    import { setErrors } from "@/stores/errors";
-    import PageWrapper from "@/components/base/PageWrapper.svelte";
-    import Field from "@/components/base/Field.svelte";
-    import SettingsSidebar from "@/components/settings/SettingsSidebar.svelte";
-    import ImportPopup from "@/components/settings/ImportPopup.svelte";
+    import { tick } from "svelte";
 
     $pageTitle = "Import collections";
 
@@ -22,8 +22,9 @@
     let deleteMissing = true;
     let collectionsToUpdate = [];
     let isLoadingOldCollections = false;
+    let mergeWithOldCollections = false; // an alternative to the default deleteMissing option
 
-    $: if (typeof schemas !== "undefined") {
+    $: if (typeof schemas !== "undefined" && mergeWithOldCollections !== null) {
         loadNewCollections(schemas);
     }
 
@@ -33,7 +34,12 @@
         newCollections.length === newCollections.filter((item) => !!item.id && !!item.name).length;
 
     $: collectionsToDelete = oldCollections.filter((collection) => {
-        return isValid && deleteMissing && !CommonHelper.findByKey(newCollections, "id", collection.id);
+        return (
+            isValid &&
+            !mergeWithOldCollections &&
+            deleteMissing &&
+            !CommonHelper.findByKey(newCollections, "id", collection.id)
+        );
     });
 
     $: collectionsToAdd = newCollections.filter((collection) => {
@@ -63,15 +69,15 @@
         }
 
         // check for matching schema fields
-        const oldSchema = Array.isArray(old.schema) ? old.schema : [];
-        const newSchema = Array.isArray(collection.schema) ? collection.schema : [];
-        for (const field of newSchema) {
-            const oldFieldById = CommonHelper.findByKey(oldSchema, "id", field.id);
+        const oldFields = Array.isArray(old.fields) ? old.fields : [];
+        const newFields = Array.isArray(collection.fields) ? collection.fields : [];
+        for (const field of newFields) {
+            const oldFieldById = CommonHelper.findByKey(oldFields, "id", field.id);
             if (oldFieldById) {
                 continue; // no need to do any replacements
             }
 
-            const oldFieldByName = CommonHelper.findByKey(oldSchema, "name", field.name);
+            const oldFieldByName = CommonHelper.findByKey(oldFields, "name", field.name);
             if (oldFieldByName && field.id != oldFieldByName.id) {
                 return true;
             }
@@ -87,13 +93,16 @@
 
         try {
             oldCollections = await ApiClient.collections.getFullList(200);
-            // delete timestamps
             for (let collection of oldCollections) {
+                // delete timestamps
                 delete collection.created;
                 delete collection.updated;
+
+                // unset oauth2 providers
+                delete collection.oauth2?.providers;
             }
         } catch (err) {
-            ApiClient.errorResponseHandler(err);
+            ApiClient.error(err);
         }
 
         isLoadingOldCollections = false;
@@ -144,7 +153,7 @@
             delete collection.updated;
 
             // merge fields with duplicated ids
-            collection.schema = CommonHelper.filterDuplicatesByKey(collection.schema);
+            collection.fields = CommonHelper.filterDuplicatesByKey(collection.fields);
         }
     }
 
@@ -163,10 +172,10 @@
             collection.id = replacedId;
 
             // replace field ids
-            const oldSchema = Array.isArray(old.schema) ? old.schema : [];
-            const newSchema = Array.isArray(collection.schema) ? collection.schema : [];
-            for (const field of newSchema) {
-                const oldField = CommonHelper.findByKey(oldSchema, "name", field.name);
+            const oldFields = Array.isArray(old.fields) ? old.fields : [];
+            const newFields = Array.isArray(collection.fields) ? collection.fields : [];
+            for (const field of newFields) {
+                const oldField = CommonHelper.findByKey(oldFields, "name", field.name);
                 if (oldField && oldField.id) {
                     field.id = oldField.id;
                 }
@@ -174,14 +183,22 @@
 
             // update references
             for (let ref of newCollections) {
-                if (!Array.isArray(ref.schema)) {
+                if (!Array.isArray(ref.fields)) {
                     continue;
                 }
-                for (let field of ref.schema) {
-                    if (field.options?.collectionId && field.options?.collectionId === originalId) {
-                        field.options.collectionId = replacedId;
+                for (let field of ref.fields) {
+                    if (field.collectionId && field.collectionId === originalId) {
+                        field.collectionId = replacedId;
                     }
                 }
+            }
+
+            // update index names that contains the collection id
+            for (let i = 0; i < collection.indexes?.length; i++) {
+                collection.indexes[i] = collection.indexes[i].replace(
+                    /create\s+(?:unique\s+)?\s*index\s*(?:if\s+not\s+exists\s+)?(\S*)\s+on/gim,
+                    (v) => v.replace(originalId, replacedId),
+                );
             }
         }
 
@@ -222,6 +239,14 @@
         schemas = "";
         fileInput.value = "";
         setErrors({});
+    }
+
+    function review() {
+        const collectionsToImport = !mergeWithOldCollections
+            ? newCollections
+            : CommonHelper.filterDuplicatesByKey(oldCollections.concat(newCollections));
+
+        importPopup?.show(oldCollections, collectionsToImport, deleteMissing);
     }
 </script>
 
@@ -283,8 +308,20 @@
                     {/if}
                 </Field>
 
+                {#if newCollections.length}
+                    <Field class="form-field form-field-toggle" let:uniqueId>
+                        <input
+                            type="checkbox"
+                            id={uniqueId}
+                            bind:checked={mergeWithOldCollections}
+                            disabled={!isValid}
+                        />
+                        <label for={uniqueId}>Merge with the existing collections</label>
+                    </Field>
+                {/if}
+
                 {#if false}
-                    <!-- for now hide the delete control and eventually enable/remove based on the users feedback -->
+                    <!-- for now hide the explicit delete control and eventually enable/remove based on the users feedback -->
                     <Field class="form-field form-field-toggle" let:uniqueId>
                         <input
                             type="checkbox"
@@ -315,10 +352,12 @@
                             {#each collectionsToDelete as collection (collection.id)}
                                 <div class="list-item">
                                     <span class="label label-danger list-label">Deleted</span>
-                                    <strong>{collection.name}</strong>
-                                    {#if collection.id}
-                                        <small class="txt-hint">({collection.id})</small>
-                                    {/if}
+                                    <div class="inline-flex flex-gap-5">
+                                        <strong>{collection.name}</strong>
+                                        {#if collection.id}
+                                            <small class="txt-hint">{collection.id}</small>
+                                        {/if}
+                                    </div>
                                 </div>
                             {/each}
                         {/if}
@@ -329,15 +368,14 @@
                                     <span class="label label-warning list-label">Changed</span>
                                     <div class="inline-flex flex-gap-5">
                                         {#if pair.old.name !== pair.new.name}
-                                            <strong class="txt-strikethrough txt-hint">{pair.old.name}</strong
-                                            >
+                                            <strong class="txt-strikethrough txt-hint">
+                                                {pair.old.name}
+                                            </strong>
                                             <i class="ri-arrow-right-line txt-sm" />
                                         {/if}
-                                        <strong>
-                                            {pair.new.name}
-                                        </strong>
+                                        <strong>{pair.new.name}</strong>
                                         {#if pair.new.id}
-                                            <small class="txt-hint">({pair.new.id})</small>
+                                            <small class="txt-hint">{pair.new.id}</small>
                                         {/if}
                                     </div>
                                 </div>
@@ -348,10 +386,12 @@
                             {#each collectionsToAdd as collection (collection.id)}
                                 <div class="list-item">
                                     <span class="label label-success list-label">Added</span>
-                                    <strong>{collection.name}</strong>
-                                    {#if collection.id}
-                                        <small class="txt-hint">({collection.id})</small>
-                                    {/if}
+                                    <div class="inline-flex flex-gap-5">
+                                        <strong>{collection.name}</strong>
+                                        {#if collection.id}
+                                            <small class="txt-hint">{collection.id}</small>
+                                        {/if}
+                                    </div>
                                 </div>
                             {/each}
                         {/if}
@@ -365,7 +405,7 @@
                         </div>
                         <div class="content">
                             <string>
-                                Some of the imported collections shares the same name and/or fields but are
+                                Some of the imported collections share the same name and/or fields but are
                                 imported with different IDs. You can replace them in the import if you want
                                 to.
                             </string>
@@ -382,7 +422,7 @@
 
                 <div class="flex m-t-base">
                     {#if !!schemas}
-                        <button type="button" class="btn btn-secondary link-hint" on:click={() => clear()}>
+                        <button type="button" class="btn btn-transparent link-hint" on:click={() => clear()}>
                             <span class="txt">Clear</span>
                         </button>
                     {/if}
@@ -391,7 +431,7 @@
                         type="button"
                         class="btn btn-expanded btn-warning m-l-auto"
                         disabled={!canImport}
-                        on:click={() => importPopup?.show(oldCollections, newCollections, deleteMissing)}
+                        on:click={review}
                     >
                         <span class="txt">Review</span>
                     </button>
@@ -401,7 +441,13 @@
     </div>
 </PageWrapper>
 
-<ImportPopup bind:this={importPopup} on:submit={() => clear()} />
+<ImportPopup
+    bind:this={importPopup}
+    on:submit={() => {
+        clear();
+        loadOldCollections();
+    }}
+/>
 
 <style>
     .list-label {

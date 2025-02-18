@@ -4,20 +4,27 @@
 
 <script>
     import { tick } from "svelte";
+    import { scale } from "svelte/transition";
     import Field from "@/components/base/Field.svelte";
+    import tooltip from "@/actions/tooltip";
 
     export let collection = null;
     export let rule = null;
     export let label = "Rule";
     export let formKey = "rule";
     export let required = false;
+    export let disabled = false;
+    export let superuserToggle = true;
+    export let placeholder = "Leave empty to grant everyone access...";
 
     let editorRef = null;
     let tempValue = null;
     let ruleInputComponent = cachedRuleComponent;
     let isRuleComponentLoading = false;
 
-    $: isAdminOnly = rule === null;
+    $: isSuperuserOnly = superuserToggle && rule === null;
+
+    $: isDisabled = disabled || collection.system;
 
     loadEditorComponent();
 
@@ -41,7 +48,7 @@
         editorRef?.focus();
     }
 
-    async function lock() {
+    function lock() {
         tempValue = rule;
         rule = null;
     }
@@ -53,66 +60,151 @@
     </div>
 {:else}
     <Field
-        class="form-field rule-field m-0 {required ? 'requied' : ''} {isAdminOnly ? 'disabled' : ''}"
+        class="form-field rule-field {required ? 'requied' : ''} {isSuperuserOnly ? 'disabled' : ''}"
         name={formKey}
         let:uniqueId
     >
-        <label for={uniqueId}>
-            <span class="txt">
-                {label} - {isAdminOnly ? "Admins only" : "Custom rule"}
-            </span>
+        <div
+            class="input-wrapper"
+            use:tooltip={collection.system
+                ? { text: "System collection rule cannot be changed.", position: "top" }
+                : undefined}
+        >
+            <label for={uniqueId}>
+                <slot name="beforeLabel" {isSuperuserOnly} />
 
-            {#if isAdminOnly}
+                <span class="txt" class:txt-hint={isSuperuserOnly}>
+                    {label}
+                    {isSuperuserOnly ? "- Superusers only" : ""}
+                </span>
+
+                <slot name="afterLabel" {isSuperuserOnly} />
+
+                {#if superuserToggle && !isSuperuserOnly}
+                    <button
+                        type="button"
+                        class="btn btn-sm btn-transparent btn-hint lock-toggle"
+                        aria-hidden={isDisabled}
+                        disabled={isDisabled}
+                        on:click={lock}
+                    >
+                        <i class="ri-lock-line" aria-hidden="true" />
+                        <span class="txt">Set Superusers only</span>
+                    </button>
+                {/if}
+            </label>
+
+            <svelte:component
+                this={ruleInputComponent}
+                id={uniqueId}
+                bind:this={editorRef}
+                bind:value={rule}
+                baseCollection={collection}
+                disabled={isDisabled || isSuperuserOnly}
+                placeholder={!isSuperuserOnly ? placeholder : ""}
+            />
+
+            {#if superuserToggle && isSuperuserOnly}
                 <button
                     type="button"
-                    class="btn  btn-sm btn-secondary btn-success lock-toggle"
+                    class="unlock-overlay"
+                    disabled={isDisabled}
+                    aria-hidden={isDisabled}
+                    transition:scale={{ duration: 150, start: 0.98 }}
                     on:click={unlock}
                 >
-                    <i class="ri-lock-unlock-line" />
-                    <span class="txt">Set custom rule</span>
-                </button>
-            {:else}
-                <button type="button" class="btn  btn-sm btn-secondary btn-hint lock-toggle" on:click={lock}>
-                    <i class="ri-lock-line" />
-                    <span class="txt">Set Admins only</span>
+                    {#if !isDisabled}
+                        <small class="txt">Unlock and set custom rule</small>
+                    {/if}
+                    <div class="icon" aria-hidden="true">
+                        <i class="ri-lock-unlock-line" />
+                    </div>
                 </button>
             {/if}
-        </label>
-
-        <svelte:component
-            this={ruleInputComponent}
-            id={uniqueId}
-            bind:this={editorRef}
-            bind:value={rule}
-            baseCollection={collection}
-            disabled={isAdminOnly}
-        />
+        </div>
 
         <div class="help-block">
-            <slot {isAdminOnly}>
-                <p>
-                    {#if isAdminOnly}
-                        Only admins will be able to perform this action (
-                        <button type="button" class="link-hint" on:click={unlock}>unlock to change</button>
-                        ).
-                    {:else}
-                        Leave empty to grant everyone access.
-                    {/if}
-                </p>
-            </slot>
+            <slot {isSuperuserOnly} />
         </div>
     </Field>
 {/if}
 
-<style>
+<style lang="scss">
     .lock-toggle {
         position: absolute;
         right: 0px;
         top: 0px;
         min-width: 135px;
-        padding: 10px 10px;
+        padding: 10px;
         border-top-left-radius: 0;
         border-bottom-right-radius: 0;
-        background: rgba(0, 0, 0, 0.05);
+        background: rgba(53, 71, 104, 0.09);
+    }
+    :global(.rule-field .code-editor .cm-placeholder) {
+        font-family: var(--baseFontFamily);
+    }
+    .input-wrapper {
+        position: relative;
+    }
+    .unlock-overlay {
+        --hoverAnimationSpeed: 0.2s;
+        position: absolute;
+        z-index: 1;
+        left: 0;
+        top: 0;
+        width: 100%;
+        height: 100%;
+        display: flex;
+        padding: 20px;
+        gap: 10px;
+        align-items: center;
+        justify-content: end;
+        text-align: center;
+        border-radius: var(--baseRadius);
+        outline: 0;
+        cursor: pointer;
+        text-decoration: none;
+        color: var(--successColor);
+        border: 2px solid var(--baseAlt1Color);
+        transition: border-color var(--baseAnimationSpeed);
+        i {
+            font-size: inherit;
+        }
+        .icon {
+            color: var(--successColor);
+            font-size: 1.15rem;
+            line-height: 1;
+            font-weight: normal;
+            transition: transform var(--hoverAnimationSpeed);
+        }
+        .txt {
+            opacity: 0;
+            font-size: var(--xsFontSize);
+            font-weight: 600;
+            line-height: var(--smLineHeight);
+            transform: translateX(5px);
+            transition:
+                transform var(--hoverAnimationSpeed),
+                opacity var(--hoverAnimationSpeed);
+        }
+        &:hover,
+        &:focus-visible,
+        &:active {
+            border-color: var(--baseAlt3Color);
+            .icon {
+                transform: scale(1.1);
+            }
+            .txt {
+                opacity: 1;
+                transform: scale(1);
+            }
+        }
+        &:active {
+            transition-duration: var(--activeAnimationSpeed);
+            border-color: var(--baseAlt3Color);
+        }
+        &[disabled] {
+            cursor: not-allowed;
+        }
     }
 </style>

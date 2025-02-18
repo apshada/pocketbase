@@ -8,7 +8,8 @@
     border-radius: var(--baseRadius);
     background: var(--baseColor);
     border: 1px solid var(--baseAlt2Color);
-    transition: box-shadow var(--baseAnimationSpeed),
+    transition: border-radius var(--baseAnimationSpeed),
+                box-shadow var(--baseAnimationSpeed),
                 margin var(--baseAnimationSpeed);
 
     // header
@@ -20,12 +21,13 @@
         align-items: center;
         row-gap: 10px;
         column-gap: var(--smSpacing);
-        padding: ($spacing - 8) $spacing ($spacing - 10);
+        padding: ($spacing - 8) $spacing ($spacing - 8);
         width: 100%;
         user-select: none;
         color: var(--txtPrimaryColor);
         border-radius: inherit;
-        transition: background var(--baseAnimationSpeed),
+        transition: border-radius var(--baseAnimationSpeed),
+                    background var(--baseAnimationSpeed),
                     box-shadow var(--baseAnimationSpeed);
         .icon {
             width: 18px;
@@ -121,11 +123,19 @@
     .accordion {
         border-radius: 0;
         margin: -1px 0 0;
+        &:has(+ .accordion.active) {
+           border-bottom-left-radius: var(--baseRadius);
+           border-bottom-right-radius: var(--baseRadius);
+        }
     }
     & > .accordion.active,
     & > .accordion-wrapper > .accordion.active {
-        margin: var(--smSpacing) 0;
+        margin: var(--xsSpacing) 0;
         border-radius: var(--baseRadius);
+        + .accordion {
+            border-top-left-radius: var(--baseRadius);
+            border-top-right-radius: var(--baseRadius);
+        }
     }
     & > .accordion:first-child,
     & > .accordion-wrapper:first-child > .accordion {

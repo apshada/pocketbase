@@ -21,7 +21,7 @@
 
         isLoading = true;
 
-        // init a custom client to avoid interfering with the admin state
+        // init a custom client to avoid interfering with the superuser state
         const client = new PocketBase(import.meta.env.PB_BACKEND_URL);
 
         try {
@@ -31,7 +31,7 @@
                 .confirmPasswordReset(params?.token, newPassword, newPasswordConfirm);
             success = true;
         } catch (err) {
-            ApiClient.errorResponseHandler(err);
+            ApiClient.error(err);
         }
 
         isLoading = false;
@@ -48,7 +48,7 @@
             </div>
         </div>
 
-        <button type="button" class="btn btn-secondary btn-block" on:click={() => window.close()}>
+        <button type="button" class="btn btn-transparent btn-block" on:click={() => window.close()}>
             Close
         </button>
     {:else}

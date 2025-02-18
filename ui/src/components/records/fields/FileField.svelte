@@ -1,32 +1,34 @@
 <script>
-    import { SchemaField } from "pocketbase";
+    import tooltip from "@/actions/tooltip";
     import ApiClient from "@/utils/ApiClient";
     import CommonHelper from "@/utils/CommonHelper";
-    import tooltip from "@/actions/tooltip";
+    import Draggable from "@/components/base/Draggable.svelte";
     import Field from "@/components/base/Field.svelte";
     import UploadedFilePreview from "@/components/base/UploadedFilePreview.svelte";
-    import RecordFilePreview from "@/components/records/RecordFilePreview.svelte";
+    import RecordFileThumb from "@/components/records/RecordFileThumb.svelte";
+    import FieldLabel from "@/components/records/fields/FieldLabel.svelte";
 
     export let record;
+    export let field;
     export let value = "";
     export let uploadedFiles = []; // Array<File> array
-    export let deletedFileIndexes = []; // Array<int> array
-    export let field = new SchemaField();
+    export let deletedFileNames = []; // Array<string> array
 
     let fileInput;
     let filesListElem;
+    let isDragOver = false;
 
     // normalize uploadedFiles type
     $: if (!Array.isArray(uploadedFiles)) {
         uploadedFiles = CommonHelper.toArray(uploadedFiles);
     }
 
-    // normalize delited file indexes
-    $: if (!Array.isArray(deletedFileIndexes)) {
-        deletedFileIndexes = CommonHelper.toArray(deletedFileIndexes);
+    // normalize deleted files
+    $: if (!Array.isArray(deletedFileNames)) {
+        deletedFileNames = CommonHelper.toArray(deletedFileNames);
     }
 
-    $: isMultiple = field.options?.maxSelect > 1;
+    $: isMultiple = field.maxSelect > 1;
 
     $: if (CommonHelper.isEmpty(value)) {
         value = isMultiple ? [] : "";
@@ -36,20 +38,20 @@
 
     $: maxReached =
         (valueAsArray.length || uploadedFiles.length) &&
-        field.options?.maxSelect <= valueAsArray.length + uploadedFiles.length - deletedFileIndexes.length;
+        field.maxSelect <= valueAsArray.length + uploadedFiles.length - deletedFileNames.length;
 
-    $: if (uploadedFiles !== -1 || deletedFileIndexes !== -1) {
+    $: if (uploadedFiles !== -1 || deletedFileNames !== -1) {
         triggerListChange();
     }
 
-    function restoreExistingFile(valueIndex) {
-        CommonHelper.removeByValue(deletedFileIndexes, valueIndex);
-        deletedFileIndexes = deletedFileIndexes;
+    function restoreExistingFile(name) {
+        CommonHelper.removeByValue(deletedFileNames, name);
+        deletedFileNames = deletedFileNames;
     }
 
-    function removeExistingFile(valueIndex) {
-        CommonHelper.pushUnique(deletedFileIndexes, valueIndex);
-        deletedFileIndexes = deletedFileIndexes;
+    function removeExistingFile(name) {
+        CommonHelper.pushUnique(deletedFileNames, name);
+        deletedFileNames = deletedFileNames;
     }
 
     function removeNewFile(index) {
@@ -63,83 +65,159 @@
     function triggerListChange() {
         filesListElem?.dispatchEvent(
             new CustomEvent("change", {
-                detail: { value, uploadedFiles, deletedFileIndexes },
+                detail: { value, uploadedFiles, deletedFileNames },
                 bubbles: true,
-            })
+            }),
         );
+    }
+
+    function dropHandler(e) {
+        e.preventDefault();
+
+        isDragOver = false;
+
+        const files = e.dataTransfer?.files || [];
+
+        if (maxReached || !files.length) {
+            return;
+        }
+
+        for (const file of files) {
+            const currentTotal = valueAsArray.length + uploadedFiles.length - deletedFileNames.length;
+
+            if (field.maxSelect <= currentTotal) {
+                break;
+            }
+
+            uploadedFiles.push(file);
+        }
+
+        uploadedFiles = uploadedFiles;
+    }
+
+    async function openInNewTab(filename) {
+        try {
+            let token = await ApiClient.getSuperuserFileToken(record.collectionId);
+            let url = ApiClient.files.getURL(record, filename, { token });
+            window.open(url, "_blank", "noreferrer, noopener");
+        } catch (err) {
+            console.warn("openInNewTab file token failure:", err);
+        }
     }
 </script>
 
-<Field class="form-field form-field-file {field.required ? 'required' : ''}" name={field.name} let:uniqueId>
-    <label for={uniqueId}>
-        <i class={CommonHelper.getFieldTypeIcon(field.type)} />
-        <span class="txt">{field.name}</span>
-    </label>
+<!-- svelte-ignore a11y-no-static-element-interactions -->
+<div
+    class="block"
+    on:dragover|preventDefault={() => {
+        isDragOver = true;
+    }}
+    on:dragleave={() => {
+        isDragOver = false;
+    }}
+    on:drop={dropHandler}
+>
+    <Field
+        class="
+            form-field form-field-list form-field-file
+            {field.required ? 'required' : ''}
+            {isDragOver ? 'dragover' : ''}
+        "
+        name={field.name}
+        let:uniqueId
+    >
+        <FieldLabel {uniqueId} {field} />
 
-    <div bind:this={filesListElem} class="files-list">
-        {#each valueAsArray as filename, i (filename)}
-            <div class="list-item">
-                <figure class="thumb" class:fade={deletedFileIndexes.includes(i)}>
-                    <RecordFilePreview {record} {filename} />
-                </figure>
-                <a
-                    href={ApiClient.getFileUrl(record, filename)}
-                    class="filename link-hint"
-                    class:txt-strikethrough={deletedFileIndexes.includes(i)}
-                    use:tooltip={{ position: "right", text: "Download" }}
-                    target="_blank"
-                    rel="noopener noreferrer"
+        <div bind:this={filesListElem} class="list">
+            {#each valueAsArray as filename, i (filename + record.id)}
+                {@const isDeleted = deletedFileNames.includes(filename)}
+                <Draggable
+                    bind:list={value}
+                    group={field.name + "_uploaded"}
+                    index={i}
+                    disabled={!isMultiple}
+                    let:dragging
+                    let:dragover
                 >
-                    {filename}
-                </a>
+                    <div class="list-item" class:dragging class:dragover>
+                        <div class:fade={isDeleted}>
+                            <RecordFileThumb {record} {filename} />
+                        </div>
 
-                {#if deletedFileIndexes.includes(i)}
-                    <button
-                        type="button"
-                        class="btn btn-sm btn-danger btn-secondary"
-                        on:click={() => restoreExistingFile(i)}
-                    >
-                        <span class="txt">Restore</span>
-                    </button>
-                {:else}
-                    <button
-                        type="button"
-                        class="btn btn-secondary btn-sm btn-circle btn-remove txt-hint"
-                        use:tooltip={"Remove file"}
-                        on:click={() => removeExistingFile(i)}
-                    >
-                        <i class="ri-close-line" />
-                    </button>
-                {/if}
-            </div>
-        {/each}
+                        <div class="content">
+                            <button
+                                type="button"
+                                draggable={false}
+                                class="txt-ellipsis {isDeleted
+                                    ? 'txt-strikethrough link-hint'
+                                    : 'link-primary'}"
+                                title="Download"
+                                on:auxclick={() => openInNewTab(filename)}
+                                on:click={() => openInNewTab(filename)}
+                            >
+                                {filename}
+                            </button>
+                        </div>
 
-        {#each uploadedFiles as file, i}
-            <div class="list-item">
-                <figure class="thumb">
-                    <UploadedFilePreview {file} />
-                </figure>
-                <div class="filename" title={file.name}>
-                    <small class="label label-success m-r-5">New</small>
-                    <span class="txt">{file.name}</span>
-                </div>
-                <button
-                    type="button"
-                    class="btn btn-secondary btn-sm btn-circle btn-remove"
-                    use:tooltip={"Remove file"}
-                    on:click={() => removeNewFile(i)}
+                        <div class="actions">
+                            {#if isDeleted}
+                                <button
+                                    type="button"
+                                    class="btn btn-sm btn-danger btn-transparent"
+                                    on:click={() => restoreExistingFile(filename)}
+                                >
+                                    <span class="txt">Restore</span>
+                                </button>
+                            {:else}
+                                <button
+                                    type="button"
+                                    class="btn btn-transparent btn-hint btn-sm btn-circle btn-remove"
+                                    use:tooltip={"Remove file"}
+                                    on:click={() => removeExistingFile(filename)}
+                                >
+                                    <i class="ri-close-line" />
+                                </button>
+                            {/if}
+                        </div>
+                    </div>
+                </Draggable>
+            {/each}
+
+            {#each uploadedFiles as file, i (file.name + i)}
+                <Draggable
+                    bind:list={uploadedFiles}
+                    group={field.name + "_new"}
+                    index={i}
+                    disabled={!isMultiple}
+                    let:dragging
+                    let:dragover
                 >
-                    <i class="ri-close-line" />
-                </button>
-            </div>
-        {/each}
+                    <div class="list-item" class:dragging class:dragover>
+                        <figure class="thumb">
+                            <UploadedFilePreview {file} />
+                        </figure>
+                        <div class="filename m-r-auto" title={file.name}>
+                            <small class="label label-success m-r-5">New</small>
+                            <span class="txt">{file.name}</span>
+                        </div>
+                        <button
+                            type="button"
+                            class="btn btn-transparent btn-hint btn-sm btn-circle btn-remove"
+                            use:tooltip={"Remove file"}
+                            on:click={() => removeNewFile(i)}
+                        >
+                            <i class="ri-close-line" />
+                        </button>
+                    </div>
+                </Draggable>
+            {/each}
 
-        {#if !maxReached}
-            <div class="list-item btn-list-item">
+            <div class="list-item list-item-btn">
                 <input
                     bind:this={fileInput}
                     type="file"
                     class="hidden"
+                    accept={field.mimeTypes?.join(",") || null}
                     multiple={isMultiple}
                     on:change={() => {
                         for (let file of fileInput.files) {
@@ -151,13 +229,14 @@
                 />
                 <button
                     type="button"
-                    class="btn btn-secondary btn-sm btn-block"
+                    class="btn btn-transparent btn-sm btn-block"
+                    disabled={maxReached}
                     on:click={() => fileInput?.click()}
                 >
                     <i class="ri-upload-cloud-line" />
                     <span class="txt">Upload new file</span>
                 </button>
             </div>
-        {/if}
-    </div>
-</Field>
+        </div>
+    </Field>
+</div>

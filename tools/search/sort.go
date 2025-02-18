@@ -5,7 +5,10 @@ import (
 	"strings"
 )
 
-const randomSortKey string = "@random"
+const (
+	randomSortKey string = "@random"
+	rowidSortKey  string = "@rowid"
+)
 
 // sort field directions
 const (
@@ -26,6 +29,11 @@ func (s *SortField) BuildExpr(fieldResolver FieldResolver) (string, error) {
 		return "RANDOM()", nil
 	}
 
+	// special case for the builtin SQLite rowid column
+	if s.Name == rowidSortKey {
+		return fmt.Sprintf("[[_rowid_]] %s", s.Direction), nil
+	}
+
 	result, err := fieldResolver.Resolve(s.Name)
 
 	// invalidate empty fields and non-column identifiers
@@ -40,6 +48,7 @@ func (s *SortField) BuildExpr(fieldResolver FieldResolver) (string, error) {
 // into a slice of SortFields.
 //
 // Example:
+//
 //	fields := search.ParseSortFromString("-name,+created")
 func ParseSortFromString(str string) (fields []SortField) {
 	data := strings.Split(str, ",")

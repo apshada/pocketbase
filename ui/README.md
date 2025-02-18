@@ -1,12 +1,10 @@
-PocketBase Admin dashboard UI
+PocketBase Superuser dashboard UI
 ======================================================================
 
-This is the PocketBase Admin dashboard UI (built with Svelte and Vite).
+This is the PocketBase Superuser dashboard UI (built with Svelte and Vite).
 
 Although it could be used independently, it is mainly intended to be embedded
 as part of a PocketBase app executable (hence the `embed.go` file).
-
-The used admins avatars are from https://boringavatars.com/.
 
 ## Development
 

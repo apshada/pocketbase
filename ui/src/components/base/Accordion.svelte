@@ -1,5 +1,5 @@
 <script>
-    import { onMount, createEventDispatcher } from "svelte";
+    import { createEventDispatcher, onMount } from "svelte";
     import { slide } from "svelte/transition";
 
     const dispatch = createEventDispatcher();
@@ -21,14 +21,18 @@
         clearTimeout(expandTimeoutId);
         expandTimeoutId = setTimeout(() => {
             if (accordionElem?.scrollIntoViewIfNeeded) {
-                accordionElem?.scrollIntoViewIfNeeded();
+                accordionElem.scrollIntoViewIfNeeded();
             } else if (accordionElem?.scrollIntoView) {
-                accordionElem?.scrollIntoView({
+                accordionElem.scrollIntoView({
                     behavior: "smooth",
                     block: "nearest",
                 });
             }
         }, 200);
+    }
+
+    export function isExpanded() {
+        return !!active;
     }
 
     export function expand() {
@@ -75,6 +79,7 @@
         class="accordion-header"
         {draggable}
         class:interactive
+        aria-expanded={active}
         on:click|preventDefault={() => interactive && toggle()}
         on:drop|preventDefault={(e) => {
             if (draggable) {
@@ -102,7 +107,7 @@
     </button>
 
     {#if active}
-        <div class="accordion-content" transition:slide|local={{ duration: 150 }}>
+        <div class="accordion-content" transition:slide={{ delay: 10, duration: 150 }}>
             <slot />
         </div>
     {/if}

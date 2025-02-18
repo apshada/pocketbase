@@ -24,8 +24,56 @@ func TestClients(t *testing.T) {
 	b.Register(subscriptions.NewDefaultClient())
 	b.Register(subscriptions.NewDefaultClient())
 
+	// check if it is a shallow copy
+	clients := b.Clients()
+	for k := range clients {
+		delete(clients, k)
+	}
+
+	// should return a new copy
 	if total := len(b.Clients()); total != 2 {
 		t.Fatalf("Expected 2 clients, got %v", total)
+	}
+}
+
+func TestChunkedClients(t *testing.T) {
+	b := subscriptions.NewBroker()
+
+	chunks := b.ChunkedClients(2)
+	if total := len(chunks); total != 0 {
+		t.Fatalf("Expected %d chunks, got %d", 0, total)
+	}
+
+	b.Register(subscriptions.NewDefaultClient())
+	b.Register(subscriptions.NewDefaultClient())
+	b.Register(subscriptions.NewDefaultClient())
+
+	chunks = b.ChunkedClients(2)
+	if total := len(chunks); total != 2 {
+		t.Fatalf("Expected %d chunks, got %d", 2, total)
+	}
+
+	if total := len(chunks[0]); total != 2 {
+		t.Fatalf("Expected the first chunk to have 2 clients, got %d", total)
+	}
+
+	if total := len(chunks[1]); total != 1 {
+		t.Fatalf("Expected the second chunk to have 1 client, got %d", total)
+	}
+}
+
+func TestTotalClients(t *testing.T) {
+	b := subscriptions.NewBroker()
+
+	if total := b.TotalClients(); total != 0 {
+		t.Fatalf("Expected no clients, got %d", total)
+	}
+
+	b.Register(subscriptions.NewDefaultClient())
+	b.Register(subscriptions.NewDefaultClient())
+
+	if total := b.TotalClients(); total != 2 {
+		t.Fatalf("Expected %d clients, got %d", 2, total)
 	}
 }
 

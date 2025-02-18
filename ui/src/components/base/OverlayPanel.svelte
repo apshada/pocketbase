@@ -1,6 +1,8 @@
 <script context="module">
     let holder;
 
+    let activePanels = [];
+
     function getHolder() {
         holder = holder || document.querySelector(".overlays");
 
@@ -23,7 +25,7 @@
      *     <h5 slot="header">My title</h5>
      *     <p>Lorem ipsum dolor sit amet...</p>
      *     <svelte:fragment slot="footer">
-     *         <button class="btn btn-secondary">Cancel</button>
+     *         <button class="btn btn-transparent">Cancel</button>
      *         <button class="btn btn-expanded">Save</button>
      *     </svelte:fragment>
      * </OverlayPanel>
@@ -45,6 +47,7 @@
     export let beforeHide = undefined; // function callback called before hide; if return false - no close
 
     const dispatch = createEventDispatcher();
+    const uniqueId = "op_" + CommonHelper.randomString(10);
 
     let wrapper;
     let contentPanel;
@@ -52,13 +55,22 @@
     let transitionSpeed = 150;
     let contentScrollThrottle;
     let contentScrollClass = "";
+    let oldActive = active;
 
-    $: onActiveChange(active);
+    $: if (oldActive != active) {
+        onActiveChange(active);
+    }
 
     $: handleContentScroll(contentPanel, true);
 
     $: if (wrapper) {
         zIndexUpdate();
+    }
+
+    $: if (active) {
+        registerActivePanel();
+    } else {
+        unregisterActivePanel();
     }
 
     export function show() {
@@ -81,17 +93,17 @@
         return active;
     }
 
-    async function onActiveChange(state) {
-        if (state) {
+    async function onActiveChange(newState) {
+        oldActive = newState;
+
+        if (newState) {
             oldFocusedElem = document.activeElement;
-            wrapper?.focus();
             dispatch("show");
-            document.body.classList.add("overlay-active");
+            wrapper?.focus();
         } else {
             clearTimeout(contentScrollThrottle);
-            oldFocusedElem?.focus();
             dispatch("hide");
-            document.body.classList.remove("overlay-active");
+            oldFocusedElem?.focus();
         }
 
         await tick();
@@ -108,6 +120,20 @@
             wrapper.style.zIndex = highestZIndex();
         } else {
             wrapper.style = "";
+        }
+    }
+
+    function registerActivePanel() {
+        CommonHelper.pushUnique(activePanels, uniqueId);
+
+        document.body.classList.add("overlay-active");
+    }
+
+    function unregisterActivePanel() {
+        CommonHelper.removeByValue(activePanels, uniqueId);
+
+        if (!activePanels.length) {
+            document.body.classList.remove("overlay-active");
         }
     }
 
@@ -141,59 +167,57 @@
             contentScrollClass = "";
         }
 
-        if (!panel) {
+        if (!panel || contentScrollThrottle) {
             return;
         }
 
-        if (!contentScrollThrottle) {
-            contentScrollThrottle = setTimeout(() => {
-                clearTimeout(contentScrollThrottle);
-                contentScrollThrottle = null;
+        contentScrollThrottle = setTimeout(() => {
+            clearTimeout(contentScrollThrottle);
+            contentScrollThrottle = null;
 
-                if (!panel) {
-                    return; // deleted during timeout
-                }
+            if (!panel) {
+                return; // deleted during timeout
+            }
 
-                let heightDiff = panel.scrollHeight - panel.offsetHeight;
-                if (heightDiff > 0) {
-                    contentScrollClass = "scrollable";
-                } else {
-                    contentScrollClass = "";
-                    return; // no scroll
-                }
+            let heightDiff = panel.scrollHeight - panel.offsetHeight;
+            if (heightDiff > 0) {
+                contentScrollClass = "scrollable";
+            } else {
+                contentScrollClass = "";
+                return; // no scroll
+            }
 
-                if (panel.scrollTop == 0) {
-                    contentScrollClass += " scroll-top-reached";
-                } else if (panel.scrollTop + panel.offsetHeight == panel.scrollHeight) {
-                    contentScrollClass += " scroll-bottom-reached";
-                }
-            }, 100);
-        }
+            if (panel.scrollTop == 0) {
+                contentScrollClass += " scroll-top-reached";
+            } else if (panel.scrollTop + panel.offsetHeight == panel.scrollHeight) {
+                contentScrollClass += " scroll-bottom-reached";
+            }
+        }, 100);
     }
 
     onMount(() => {
         // move outside of its current parent
         getHolder().appendChild(wrapper);
 
+        let wrapperCopy = wrapper;
+
         return () => {
             clearTimeout(contentScrollThrottle);
 
-            // ensures that no artifacts remains
-            // (currently there is a bug with svelte transition)
-            wrapper?.classList?.add("hidden");
+            unregisterActivePanel();
 
-            setTimeout(() => {
-                wrapper?.remove();
-            }, 0);
+            wrapperCopy?.remove();
         };
     });
 </script>
 
 <svelte:window on:resize={handleResize} on:keydown={handleEscPress} />
 
-<div bind:this={wrapper} class="overlay-panel-wrapper">
+<div bind:this={wrapper} class="overlay-panel-wrapper" tabindex="-1">
     {#if active}
         <div class="overlay-panel-container" class:padded={popup} class:active>
+            <!-- svelte-ignore a11y-click-events-have-key-events -->
+            <!-- svelte-ignore a11y-no-static-element-interactions -->
             <div
                 class="overlay"
                 on:click|preventDefault={() => (overlayClose ? hide() : true)}
@@ -208,9 +232,15 @@
             >
                 <div class="overlay-panel-section panel-header">
                     {#if btnClose && !popup}
-                        <div class="overlay-close" on:click|preventDefault={hide}>
-                            <i class="ri-close-line" />
-                        </div>
+                        <button
+                            type="button"
+                            aria-label="Close"
+                            class="overlay-close"
+                            transition:fade={{ duration: transitionSpeed }}
+                            on:click|preventDefault={hide}
+                        >
+                            <i class="ri-close-line" aria-hidden="true" />
+                        </button>
                     {/if}
 
                     <slot name="header" />
@@ -218,10 +248,11 @@
                     {#if btnClose && popup}
                         <button
                             type="button"
-                            class="btn btn-sm btn-circle btn-secondary btn-close m-l-auto"
+                            aria-label="Close"
+                            class="btn btn-sm btn-circle btn-transparent btn-close m-l-auto"
                             on:click|preventDefault={hide}
                         >
-                            <i class="ri-close-line txt-lg" />
+                            <i class="ri-close-line txt-lg" aria-hidden="true" />
                         </button>
                     {/if}
                 </div>

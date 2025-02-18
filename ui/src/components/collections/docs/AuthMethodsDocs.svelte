@@ -1,54 +1,47 @@
 <script>
-    import { Collection } from "pocketbase";
+    import CodeBlock from "@/components/base/CodeBlock.svelte";
+    import FieldsQueryParam from "@/components/collections/docs/FieldsQueryParam.svelte";
+    import SdkTabs from "@/components/base/SdkTabs.svelte";
     import ApiClient from "@/utils/ApiClient";
     import CommonHelper from "@/utils/CommonHelper";
-    import CodeBlock from "@/components/base/CodeBlock.svelte";
-    import SdkTabs from "@/components/collections/docs/SdkTabs.svelte";
 
-    export let collection = new Collection();
+    export let collection;
 
     let responseTab = 200;
     let responses = [];
+    let authMethods = {};
+    let isLoading = false;
 
-    $: backendAbsUrl = CommonHelper.getApiExampleUrl(ApiClient.baseUrl);
+    $: backendAbsUrl = CommonHelper.getApiExampleUrl(ApiClient.baseURL);
 
     $: responses = [
         {
             code: 200,
+            body: isLoading ? "..." : JSON.stringify(authMethods, null, 2),
+        },
+        {
+            code: 404,
             body: `
                 {
-                  "usernamePassword": true,
-                  "emailPassword": true,
-                  "authProviders": [
-                    {
-                      "name": "github",
-                      "state": "3Yd8jNkK_6PJG6hPWwBjLqKwse6Ejd",
-                      "codeVerifier": "KxFDWz1B3fxscCDJ_9gHQhLuh__ie7",
-                      "codeChallenge": "NM1oVexB6Q6QH8uPtOUfK7tq4pmu4Jz6lNDIwoxHZNE=",
-                      "codeChallengeMethod": "S256",
-                      "authUrl": "https://github.com/login/oauth/authorize?client_id=demo&code_challenge=NM1oVexB6Q6QH8uPtOUfK7tq4pmu4Jz6lNDIwoxHZNE%3D&code_challenge_method=S256&response_type=code&scope=user&state=3Yd8jNkK_6PJG6hPWwBjLqKwse6Ejd&redirect_uri="
-                    },
-                    {
-                      "name": "gitlab",
-                      "state": "NeQSbtO5cShr_mk5__3CUukiMnymeb",
-                      "codeVerifier": "ahTFHOgua8mkvPAlIBGwCUJbWKR_xi",
-                      "codeChallenge": "O-GATkTj4eXDCnfonsqGLCd6njvTixlpCMvy5kjgOOg=",
-                      "codeChallengeMethod": "S256",
-                      "authUrl": "https://gitlab.com/oauth/authorize?client_id=demo&code_challenge=O-GATkTj4eXDCnfonsqGLCd6njvTixlpCMvy5kjgOOg%3D&code_challenge_method=S256&response_type=code&scope=read_user&state=NeQSbtO5cShr_mk5__3CUukiMnymeb&redirect_uri="
-                    },
-                    {
-                      "name": "google",
-                      "state": "zB3ZPifV1TW2GMuvuFkamSXfSNkHPQ",
-                      "codeVerifier": "t3CmO5VObGzdXqieakvR_fpjiW0zdO",
-                      "codeChallenge": "KChwoQPKYlz2anAdqtgsSTdIo8hdwtc1fh2wHMwW2Yk=",
-                      "codeChallengeMethod": "S256",
-                      "authUrl": "https://accounts.google.com/o/oauth2/auth?client_id=demo&code_challenge=KChwoQPKYlz2anAdqtgsSTdIo8hdwtc1fh2wHMwW2Yk%3D&code_challenge_method=S256&response_type=code&scope=https%3A%2F%2Fwww.googleapis.com%2Fauth%2Fuserinfo.profile+https%3A%2F%2Fwww.googleapis.com%2Fauth%2Fuserinfo.email&state=zB3ZPifV1TW2GMuvuFkamSXfSNkHPQ&redirect_uri="
-                    }
-                  ]
+                  "status": 404,
+                  "message": "Missing collection context.",
+                  "data": {}
                 }
             `,
         },
     ];
+
+    listAuthMethods();
+
+    async function listAuthMethods() {
+        isLoading = true;
+        try {
+            authMethods = await ApiClient.collection(collection.name).listAuthMethods();
+        } catch (err) {
+            ApiClient.error(err);
+        }
+        isLoading = false;
+    }
 </script>
 
 <h3 class="m-b-sm">List auth methods ({collection.name})</h3>
@@ -87,9 +80,23 @@
     </div>
 </div>
 
+<div class="section-title">Query parameters</div>
+<table class="table-compact table-border m-b-base">
+    <thead>
+        <tr>
+            <th>Param</th>
+            <th>Type</th>
+            <th width="50%">Description</th>
+        </tr>
+    </thead>
+    <tbody>
+        <FieldsQueryParam />
+    </tbody>
+</table>
+
 <div class="section-title">Responses</div>
 <div class="tabs">
-    <div class="tabs-header compact left">
+    <div class="tabs-header compact combined left">
         {#each responses as response (response.code)}
             <button
                 class="tab-item"

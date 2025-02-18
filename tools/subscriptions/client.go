@@ -1,15 +1,29 @@
 package subscriptions
 
 import (
+	"encoding/json"
+	"net/url"
+	"strings"
 	"sync"
 
+	"github.com/pocketbase/pocketbase/tools/inflector"
 	"github.com/pocketbase/pocketbase/tools/security"
+	"github.com/spf13/cast"
 )
+
+const optionsParam = "options"
 
 // Message defines a client's channel data.
 type Message struct {
-	Name string
-	Data string
+	Name string `json:"name"`
+	Data []byte `json:"data"`
+}
+
+// SubscriptionOptions defines the request options (query params, headers, etc.)
+// for a single subscription topic.
+type SubscriptionOptions struct {
+	Query   map[string]string `json:"query"`
+	Headers map[string]string `json:"headers"`
 }
 
 // Client is an interface for a generic subscription client.
@@ -18,12 +32,24 @@ type Client interface {
 	Id() string
 
 	// Channel returns the client's communication channel.
+	//
+	// NB! The channel shouldn't be used after calling Discard().
 	Channel() chan Message
 
-	// Subscriptions returns all subscriptions to which the client has subscribed to.
-	Subscriptions() map[string]struct{}
+	// Subscriptions returns a shallow copy of the client subscriptions matching the prefixes.
+	// If no prefix is specified, returns all subscriptions.
+	Subscriptions(prefixes ...string) map[string]SubscriptionOptions
 
 	// Subscribe subscribes the client to the provided subscriptions list.
+	//
+	// Each subscription can also have "options" (json serialized SubscriptionOptions) as query parameter.
+	//
+	// Example:
+	//
+	// 	Subscribe(
+	// 	    "subscriptionA",
+	// 	    `subscriptionB?options={"query":{"a":1},"headers":{"x_token":"abc"}}`,
+	// 	)
 	Subscribe(subs ...string)
 
 	// Unsubscribe unsubscribes the client from the provided subscriptions list.
@@ -35,8 +61,24 @@ type Client interface {
 	// Set stores any value to the client's context.
 	Set(key string, value any)
 
+	// Unset removes a single value from the client's context.
+	Unset(key string)
+
 	// Get retrieves the key value from the client's context.
 	Get(key string) any
+
+	// Discard marks the client as "discarded" (and closes its channel),
+	// meaning that it shouldn't be used anymore for sending new messages.
+	//
+	// It is safe to call Discard() multiple times.
+	Discard()
+
+	// IsDiscarded indicates whether the client has been "discarded"
+	// and should no longer be used.
+	IsDiscarded() bool
+
+	// Send sends the specified message to the client's channel (if not discarded).
+	Send(m Message)
 }
 
 // ensures that DefaultClient satisfies the Client interface
@@ -44,11 +86,12 @@ var _ Client = (*DefaultClient)(nil)
 
 // DefaultClient defines a generic subscription client.
 type DefaultClient struct {
-	mux           sync.RWMutex
-	id            string
 	store         map[string]any
+	subscriptions map[string]SubscriptionOptions
 	channel       chan Message
-	subscriptions map[string]struct{}
+	id            string
+	mux           sync.RWMutex
+	isDiscarded   bool
 }
 
 // NewDefaultClient creates and returns a new DefaultClient instance.
@@ -57,26 +100,58 @@ func NewDefaultClient() *DefaultClient {
 		id:            security.RandomString(40),
 		store:         map[string]any{},
 		channel:       make(chan Message),
-		subscriptions: make(map[string]struct{}),
+		subscriptions: map[string]SubscriptionOptions{},
 	}
 }
 
 // Id implements the [Client.Id] interface method.
 func (c *DefaultClient) Id() string {
+	c.mux.RLock()
+	defer c.mux.RUnlock()
+
 	return c.id
 }
 
 // Channel implements the [Client.Channel] interface method.
 func (c *DefaultClient) Channel() chan Message {
+	c.mux.RLock()
+	defer c.mux.RUnlock()
+
 	return c.channel
 }
 
 // Subscriptions implements the [Client.Subscriptions] interface method.
-func (c *DefaultClient) Subscriptions() map[string]struct{} {
+//
+// It returns a shallow copy of the client subscriptions matching the prefixes.
+// If no prefix is specified, returns all subscriptions.
+func (c *DefaultClient) Subscriptions(prefixes ...string) map[string]SubscriptionOptions {
 	c.mux.RLock()
 	defer c.mux.RUnlock()
 
-	return c.subscriptions
+	// no prefix -> return copy of all subscriptions
+	if len(prefixes) == 0 {
+		result := make(map[string]SubscriptionOptions, len(c.subscriptions))
+
+		for s, options := range c.subscriptions {
+			result[s] = options
+		}
+
+		return result
+	}
+
+	result := make(map[string]SubscriptionOptions)
+
+	for _, prefix := range prefixes {
+		for s, options := range c.subscriptions {
+			// "?" ensures that the options query start character is always there
+			// so that it can be used as an end separator when looking only for the main subscription topic
+			if strings.HasPrefix(s+"?", prefix) {
+				result[s] = options
+			}
+		}
+	}
+
+	return result
 }
 
 // Subscribe implements the [Client.Subscribe] interface method.
@@ -91,7 +166,38 @@ func (c *DefaultClient) Subscribe(subs ...string) {
 			continue // skip empty
 		}
 
-		c.subscriptions[s] = struct{}{}
+		// extract subscription options (if any)
+		rawOptions := struct {
+			// note: any instead of string to minimize the breaking changes with earlier versions
+			Query   map[string]any `json:"query"`
+			Headers map[string]any `json:"headers"`
+		}{}
+		u, err := url.Parse(s)
+		if err == nil {
+			raw := u.Query().Get(optionsParam)
+			if raw != "" {
+				json.Unmarshal([]byte(raw), &rawOptions)
+			}
+		}
+
+		options := SubscriptionOptions{
+			Query:   make(map[string]string, len(rawOptions.Query)),
+			Headers: make(map[string]string, len(rawOptions.Headers)),
+		}
+
+		// normalize query
+		// (currently only single string values are supported for consistency with the default routes handling)
+		for k, v := range rawOptions.Query {
+			options.Query[k] = cast.ToString(v)
+		}
+
+		// normalize headers name and values, eg. "X-Token" is converted to "x_token"
+		// (currently only single string values are supported for consistency with the default routes handling)
+		for k, v := range rawOptions.Headers {
+			options.Headers[inflector.Snakecase(k)] = cast.ToString(v)
+		}
+
+		c.subscriptions[s] = options
 	}
 }
 
@@ -138,4 +244,43 @@ func (c *DefaultClient) Set(key string, value any) {
 	defer c.mux.Unlock()
 
 	c.store[key] = value
+}
+
+// Unset implements the [Client.Unset] interface method.
+func (c *DefaultClient) Unset(key string) {
+	c.mux.Lock()
+	defer c.mux.Unlock()
+
+	delete(c.store, key)
+}
+
+// Discard implements the [Client.Discard] interface method.
+func (c *DefaultClient) Discard() {
+	c.mux.Lock()
+	defer c.mux.Unlock()
+
+	if c.isDiscarded {
+		return
+	}
+
+	close(c.channel)
+
+	c.isDiscarded = true
+}
+
+// IsDiscarded implements the [Client.IsDiscarded] interface method.
+func (c *DefaultClient) IsDiscarded() bool {
+	c.mux.RLock()
+	defer c.mux.RUnlock()
+
+	return c.isDiscarded
+}
+
+// Send sends the specified message to the client's channel (if not discarded).
+func (c *DefaultClient) Send(m Message) {
+	if c.IsDiscarded() {
+		return
+	}
+
+	c.Channel() <- m
 }

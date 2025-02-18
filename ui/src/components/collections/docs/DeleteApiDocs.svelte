@@ -1,18 +1,17 @@
 <script>
-    import { Collection } from "pocketbase";
     import ApiClient from "@/utils/ApiClient";
     import CommonHelper from "@/utils/CommonHelper";
     import CodeBlock from "@/components/base/CodeBlock.svelte";
-    import SdkTabs from "@/components/collections/docs/SdkTabs.svelte";
+    import SdkTabs from "@/components/base/SdkTabs.svelte";
 
-    export let collection = new Collection();
+    export let collection;
 
     let responseTab = 204;
     let responses = [];
 
-    $: adminsOnly = collection?.deleteRule === null;
+    $: superusersOnly = collection?.deleteRule === null;
 
-    $: backendAbsUrl = CommonHelper.getApiExampleUrl(ApiClient.baseUrl);
+    $: backendAbsUrl = CommonHelper.getApiExampleUrl(ApiClient.baseURL);
 
     $: if (collection?.id) {
         responses.push({
@@ -26,20 +25,20 @@
             code: 400,
             body: `
                 {
-                  "code": 400,
+                  "status": 400,
                   "message": "Failed to delete record. Make sure that the record is not part of a required relation reference.",
                   "data": {}
                 }
             `,
         });
 
-        if (adminsOnly) {
+        if (superusersOnly) {
             responses.push({
                 code: 403,
                 body: `
                     {
-                      "code": 403,
-                      "message": "Only admins can access this action.",
+                      "status": 403,
+                      "message": "Only superusers can access this action.",
                       "data": {}
                     }
                 `,
@@ -50,7 +49,7 @@
             code: 404,
             body: `
                 {
-                  "code": 404,
+                  "status": 404,
                   "message": "The requested resource wasn't found.",
                   "data": {}
                 }
@@ -93,8 +92,8 @@
             /api/collections/<strong>{collection.name}</strong>/records/<strong>:id</strong>
         </p>
     </div>
-    {#if adminsOnly}
-        <p class="txt-hint txt-sm txt-right">Requires admin <code>Authorization:TOKEN</code> header</p>
+    {#if superusersOnly}
+        <p class="txt-hint txt-sm txt-right">Requires superuser <code>Authorization:TOKEN</code> header</p>
     {/if}
 </div>
 
@@ -120,7 +119,7 @@
 
 <div class="section-title">Responses</div>
 <div class="tabs">
-    <div class="tabs-header compact left">
+    <div class="tabs-header compact combined left">
         {#each responses as response (response.code)}
             <button
                 class="tab-item"

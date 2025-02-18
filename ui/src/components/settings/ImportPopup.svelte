@@ -62,7 +62,7 @@
         }
     }
 
-    function submitWithConfirm() {
+    function submitConfirm() {
         // find deleted fields
         const deletedFieldNames = [];
         if (deleteMissing) {
@@ -73,9 +73,9 @@
                     deletedFieldNames.push(old.name + ".*");
                 } else {
                     // add only deleted fields
-                    const schema = Array.isArray(old.schema) ? old.schema : [];
-                    for (const field of schema) {
-                        if (!CommonHelper.findByKey(imported.schema, "id", field.id)) {
+                    const fields = Array.isArray(old.fields) ? old.fields : [];
+                    for (const field of fields) {
+                        if (!CommonHelper.findByKey(imported.fields, "id", field.id)) {
                             deletedFieldNames.push(`${old.name}.${field.name} (${field.id})`);
                         }
                     }
@@ -86,11 +86,11 @@
         if (deletedFieldNames.length) {
             confirm(
                 `Do you really want to delete the following collection fields and their related records data:\n- ${deletedFieldNames.join(
-                    "\n- "
+                    "\n- ",
                 )}`,
                 () => {
                     submit();
-                }
+                },
             );
         } else {
             submit();
@@ -109,7 +109,7 @@
             addSuccessToast("Successfully imported collections configuration.");
             dispatch("submit");
         } catch (err) {
-            ApiClient.errorResponseHandler(err);
+            ApiClient.error(err);
         }
 
         isImporting = false;
@@ -137,13 +137,14 @@
     {/each}
 
     <svelte:fragment slot="footer">
-        <button type="button" class="btn btn-secondary" on:click={hide} disabled={isImporting}>Close</button>
+        <button type="button" class="btn btn-transparent" on:click={hide} disabled={isImporting}>Close</button
+        >
         <button
             type="button"
             class="btn btn-expanded"
             class:btn-loading={isImporting}
             disabled={isImporting}
-            on:click={() => submitWithConfirm()}
+            on:click={() => submitConfirm()}
         >
             <span class="txt">Confirm and import</span>
         </button>

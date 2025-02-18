@@ -6,7 +6,7 @@
     }
 </script>
 
-<button class="btn btn-sm btn-secondary m-t-5" on:click={toggle}>
+<button class="btn btn-sm btn-secondary m-t-10" on:click={toggle}>
     {#if expanded}
         <span class="txt">Hide details</span>
         <i class="ri-arrow-up-s-line" />
@@ -52,7 +52,7 @@
                 </li>
                 <li>
                     <code class="filter-op">{"<"}</code>
-                    <span class="txt">Less than or equal</span>
+                    <span class="txt">Less than</span>
                 </li>
                 <li>
                     <code class="filter-op">{"<="}</code>
@@ -96,7 +96,7 @@
                 <li>
                     <code class="filter-op">{"?<"}</code>
                     <em class="txt-hint">Any/At least one of</em>
-                    <span class="txt">Less than or equal</span>
+                    <span class="txt">Less than</span>
                 </li>
                 <li>
                     <code class="filter-op">{"?<="}</code>

@@ -1,996 +1,387 @@
-## v0.11.1
+## v0.25.5
 
-- Unescaped path parameter values ([#1552](https://github.com/pocketbase/pocketbase/issues/1552)).
+- Set the current working directory as a default goja script path when executing inline JS strings to allow `require(m)` traversing parent `node_modules` directories.
 
+- Updated `modernc.org/sqlite` and `modernc.org/libc` dependencies.
 
-## v0.11.0
 
-- Added `+` and `-` body field modifiers for `number`, `files`, `select` and `relation` fields.
-  ```js
-  {
-    // oldValue + 2
-    "someNumber+": 2,
+## v0.25.4
 
-    // oldValue + ["id1", "id2"] - ["id3"]
-    "someRelation+": ["id1", "id2"],
-    "someRelation-": ["id3"],
+- Downgraded `aws-sdk-go-v2` to the version before the default data integrity checks because there have been reports for non-AWS S3 providers in addition to Backblaze (IDrive, R2) that no longer or partially work with the latest AWS SDK changes.
 
-    // delete single file by its name (file fields supports only the "-" modifier!)
-    "someFile-": "filename.png",
-  }
-  ```
-  _Note1: `@request.data.someField` will contain the final resolved value._
+    While we try to enforce `when_required` by default, it is not enough to disable the new AWS SDK integrity checks entirely and some providers will require additional manual adjustments to make them compatible with the latest AWS SDK (e.g. removing the `x-aws-checksum-*` headers, unsetting the checksums calculation or reinstantiating the old MD5 checksums for some of the required operations, etc.) which as a result leads to a configuration mess that I'm not sure it would be a good idea to introduce.
 
-  _Note2: The old index (`"field.0":null`) and filename (`"field.filename.png":null`) based suffixed syntax for deleting files is still supported._
+    This unfornuatelly is not a PocketBase or Go specific issue and the official AWS SDKs for other languages are in the same situation (even the latest aws-cli).
 
-- ! Added support for multi-match/match-all request data and collection multi-valued fields (`select`, `relation`) conditions.
-  If you want a "at least one of" type of condition, you can prefix the operator with `?`.
-  ```js
-  // for each someRelA.someRelB record require the "status" field to be "active"
-  someRelA.someRelB.status = "active"
-
-  // OR for "at least one of" condition
-  someRelA.someRelB.status ?= "active"
-  ```
-  _**Note: Previously the behavior for multi-valued fields was as the "at least one of" type.
-  The release comes with system db migration that will update your existing API rules (if needed) to preserve the compatibility.
-  If you have multi-select or multi-relation filter checks in your client-side code and want to preserve the old behavior, you'll have to prefix with `?` your operators.**_
-
-- Added support for querying `@request.data.someRelField.*` relation fields.
-  ```js
-  // example submitted data: {"someRel": "REL_RECORD_ID"}
-  @request.data.someRel.status = "active"
-  ```
-
-- Added `:isset` modifier for the static request data fields.
-  ```js
-  // prevent changing the "role" field
-  @request.data.role:isset = false
-  ```
-
-- Added `:length` modifier for the arrayable request data and collection fields (`select`, `file`, `relation`).
-  ```js
-  // example submitted data: {"someSelectField": ["val1", "val2"]}
-  @request.data.someSelectField:length = 2
-
-  // check existing record field length
-  someSelectField:length = 2
-  ```
-
-- Added `:each` modifier support for the multi-`select` request data and collection field.
-  ```js
-  // check if all selected rows has "pb_" prefix
-  roles:each ~ 'pb_%'
-  ```
-
-- Improved the Admin UI filters autocomplete.
-
-- Added `@random` sort key for `RANDOM()` sorted list results.
-
-- Added Strava OAuth2 provider ([#1443](https://github.com/pocketbase/pocketbase/pull/1443); thanks @szsascha).
-
-- Added Gitee OAuth2 provider ([#1448](https://github.com/pocketbase/pocketbase/pull/1448); thanks @yuxiang-gao).
-
-- Added IME status check to the textarea keydown handler ([#1370](https://github.com/pocketbase/pocketbase/pull/1370); thanks @tenthree).
-
-- Added `filesystem.NewFileFromBytes()` helper ([#1420](https://github.com/pocketbase/pocketbase/pull/1420); thanks @dschissler).
-
-- Added support for reordering uploaded multiple files.
-
-- Added `webp` to the default images mime type presets list ([#1469](https://github.com/pocketbase/pocketbase/pull/1469); thanks @khairulhaaziq).
-
-- Added the OAuth2 refresh token to the auth meta response ([#1487](https://github.com/pocketbase/pocketbase/issues/1487)).
-
-- Fixed the text wrapping in the Admin UI listing searchbar ([#1416](https://github.com/pocketbase/pocketbase/issues/1416)).
-
-- Fixed number field value output in the records listing ([#1447](https://github.com/pocketbase/pocketbase/issues/1447)).
-
-- Fixed duplicated settings view pages caused by uncompleted transitions ([#1498](https://github.com/pocketbase/pocketbase/issues/1498)).
-
-- Allowed sending `Authorization` header with the `/auth-with-password` record and admin login requests ([#1494](https://github.com/pocketbase/pocketbase/discussions/1494)).
-
-- `migrate down` now reverts migrations in the applied order.
-
-- Added additional list-bucket check in the S3 config test API.
-
-- Other minor improvements.
-
-
-## v0.10.4
-
-- Fixed `Record.MergeExpand` panic when the main model expand map is not initialized ([#1365](https://github.com/pocketbase/pocketbase/issues/1365)).
-
-
-## v0.10.3
-
-- ! Renamed the metadata key `original_filename` to `original-filename` due to an S3 file upload error caused by the underscore character ([#1343](https://github.com/pocketbase/pocketbase/pull/1343); thanks @yuxiang-gao).
-
-- Fixed request verification docs api url ([#1332](https://github.com/pocketbase/pocketbase/pull/1332); thanks @JoyMajumdar2001)
-
-- Excluded `collectionId` and `collectionName` from the displayable relation props list ([1322](https://github.com/pocketbase/pocketbase/issues/1322); thanks @dhall2).
-
-
-## v0.10.2
-
-- Fixed nested multiple expands with shared path ([#586](https://github.com/pocketbase/pocketbase/issues/586#issuecomment-1357784227)).
-  A new helper method `models.Record.MergeExpand(map[string]any)` was also added to simplify the expand handling and unit testing.
-
-
-## v0.10.1
-
-- Fixed nested transactions deadlock when authenticating with OAuth2 ([#1291](https://github.com/pocketbase/pocketbase/issues/1291)).
-
-
-## v0.10.0
-
-- Added `/api/health` endpoint (thanks @MarvinJWendt).
-
-- Added support for SMTP `LOGIN` auth for Microsoft/Outlook and other providers that don't support the `PLAIN` auth method ([#1217](https://github.com/pocketbase/pocketbase/discussions/1217#discussioncomment-4387970)).
-
-- Reduced memory consumption (you can expect ~20% less allocated memory).
-
-- Added support for split (concurrent and nonconcurrent) DB connections pool increasing even further the concurrent throughput without blocking reads on heavy write load.
-
-- Improved record references delete performance.
-
-- Removed the unnecessary parenthesis in the generated filter SQL query, reducing the "_parse stack overflow_" errors.
-
-- Fixed `~` expressions backslash literal escaping ([#1231](https://github.com/pocketbase/pocketbase/discussions/1231)).
-
-- Refactored the `core.app.Bootstrap()` to be called before starting the cobra commands ([#1267](https://github.com/pocketbase/pocketbase/discussions/1267)).
-
-- ! Changed `pocketbase.NewWithConfig(config Config)` to `pocketbase.NewWithConfig(config *Config)` and added 4 new config settings:
-  ```go
-  DataMaxOpenConns int // default to core.DefaultDataMaxOpenConns
-  DataMaxIdleConns int // default to core.DefaultDataMaxIdleConns
-  LogsMaxOpenConns int // default to core.DefaultLogsMaxOpenConns
-  LogsMaxIdleConns int // default to core.DefaultLogsMaxIdleConns
-  ```
-
-- Added new helper method `core.App.IsBootstrapped()` to check the current app bootstrap state.
-
-- ! Changed `core.NewBaseApp(dir, encryptionEnv, isDebug)` to `NewBaseApp(config *BaseAppConfig)`.
-
-- ! Removed `rest.UploadedFile` struct (see below `filesystem.File`).
-
-- Added generic file resource struct that allows loading and uploading file content from
-  different sources (at the moment multipart/form-data requests and from the local filesystem).
-  ```
-  filesystem.File{}
-  filesystem.NewFileFromPath(path)
-  filesystem.NewFileFromMultipart(multipartHeader)
-  filesystem/System.UploadFile(file)
-  ```
-
-- Refactored `forms.RecordUpsert` to allow more easily loading and removing files programmatically.
-  ```
-  forms.RecordUpsert.AddFiles(key, filesystem.File...) // add new filesystem.File to the form for upload
-  forms.RecordUpsert.RemoveFiles(key, filenames...)     // marks the filenames for deletion
-  ```
-
-- Trigger the `password` validators if any of the others password change fields is set.
-
-
-## v0.9.2
-
-- Fixed field column name conflict on record deletion ([#1220](https://github.com/pocketbase/pocketbase/discussions/1220)).
-
-
-## v0.9.1
-
-- Moved the record file upload and delete out of the db transaction to minimize the locking times.
-
-- Added `Dao` query semaphore and base fail/retry handling to improve the concurrent writes throughput ([#1187](https://github.com/pocketbase/pocketbase/issues/1187)).
-
-- Fixed records cascade deletion when there are "A<->B" relation references.
-
-- Replaced `c.QueryString()` with `c.QueryParams().Encode()` to allow loading middleware modified query parameters in the default crud actions ([#1210](https://github.com/pocketbase/pocketbase/discussions/1210)).
-
-- Fixed the datetime field not triggering the `onChange` event on manual field edit and added a "Clear" button ([#1219](https://github.com/pocketbase/pocketbase/issues/1219)).
-
-- Updated the GitHub goreleaser action to use go 1.19.4 since it comes with [some security fixes](https://github.com/golang/go/issues?q=milestone%3AGo1.19.4+label%3ACherryPickApproved).
-
-
-## v0.9.0
-
-- Fixed concurrent multi-relation cascade update/delete ([#1138](https://github.com/pocketbase/pocketbase/issues/1138)).
-
-- Added the raw OAuth2 user data (`meta.rawUser`) and OAuth2 access token (`meta.accessToken`) to the auth response ([#654](https://github.com/pocketbase/pocketbase/discussions/654)).
-
-- `BaseModel.UnmarkAsNew()` method was renamed to `BaseModel.MarkAsNotNew()`.
-  Additionally, to simplify the insert model queries with custom IDs, it is no longer required to call `MarkAsNew()` for manually initialized models with set ID since now this is the default state.
-  When the model is populated with values from the database (eg. after row `Scan`) it will be marked automatically as "not new".
-
-- Added `Record.OriginalCopy()` method that returns a new `Record` copy populated with the initially loaded record data (useful if you want to compare old and new field values).
-
-- Added new event hooks:
-  ```go
-  app.OnBeforeBootstrap()
-  app.OnAfterBootstrap()
-  app.OnBeforeApiError()
-  app.OnAfterApiError()
-  app.OnRealtimeDisconnectRequest()
-  app.OnRealtimeBeforeMessageSend()
-  app.OnRealtimeAfterMessageSend()
-  app.OnRecordBeforeRequestPasswordResetRequest()
-  app.OnRecordAfterRequestPasswordResetRequest()
-  app.OnRecordBeforeConfirmPasswordResetRequest()
-  app.OnRecordAfterConfirmPasswordResetRequest()
-  app.OnRecordBeforeRequestVerificationRequest()
-  app.OnRecordAfterRequestVerificationRequest()
-  app.OnRecordBeforeConfirmVerificationRequest()
-  app.OnRecordAfterConfirmVerificationRequest()
-  app.OnRecordBeforeRequestEmailChangeRequest()
-  app.OnRecordAfterRequestEmailChangeRequest()
-  app.OnRecordBeforeConfirmEmailChangeRequest()
-  app.OnRecordAfterConfirmEmailChangeRequest()
-  ```
-
-- The original uploaded file name is now stored as metadata under the `original_filename` key. It could be accessed via:
-  ```go
-  fs, _ := app.NewFilesystem()
-  defer fs.Close()
-
-  attrs, _ := fs.Attributes(fikeKey)
-  attrs.Metadata["original_name"]
-  ```
-
-- Added support for `Partial/Range` file requests ([#1125](https://github.com/pocketbase/pocketbase/issues/1125)).
-  This is a minor breaking change if you are using `filesystem.Serve` (eg. as part of a custom `OnFileDownloadRequest` hook):
-  ```go
-  // old
-  filesystem.Serve(res, e.ServedPath, e.ServedName)
-
-  // new
-  filesystem.Serve(res, req, e.ServedPath, e.ServedName)
-  ```
-
-- Refactored the `migrate` command to support **external JavaScript migration files** using an embedded JS interpreter ([goja](https://github.com/dop251/goja)).
-  This allow writing custom migration scripts such as programmatically creating collections,
-  initializing default settings, running data imports, etc., with a JavaScript API very similar to the Go one (_more documentation will be available soon_).
-
-  The `migrate` command is available by default for the prebuilt executable,
-  but if you use PocketBase as framework you need register it manually:
-  ```go
-  migrationsDir := "" // default to "pb_migrations" (for js) and "migrations" (for go)
-
-  // load js files if you want to allow loading external JavaScript migrations
-  jsvm.MustRegisterMigrations(app, &jsvm.MigrationsOptions{
-    Dir: migrationsDir,
-  })
-
-  // register the `migrate` command
-  migratecmd.MustRegister(app, app.RootCmd, &migratecmd.Options{
-    TemplateLang: migratecmd.TemplateLangJS, // or migratecmd.TemplateLangGo (default)
-    Dir:          migrationsDir,
-    Automigrate:  true,
-  })
-  ```
-
-  **The refactoring also comes with automigrations support.**
-
-  If `Automigrate` is enabled (`true` by default for the prebuilt executable; can be disabled with `--automigrate=0`),
-  PocketBase will generate seamlessly in the background JS (or Go) migration file with your collection changes.
-  **The directory with the JS migrations can be committed to your git repo.**
-  All migrations (Go and JS) are automatically executed on server start.
-  Also note that the auto generated migrations are granural (in contrast to the `migrate collections` snapshot command)
-  and allow multiple developers to do changes on the collections independently (even editing the same collection) miniziming the eventual merge conflicts.
-  Here is a sample JS migration file that will be generated if you for example edit a single collection name:
-  ```js
-  // pb_migrations/1669663597_updated_posts_old.js
-  migrate((db) => {
-    // up
-    const dao = new Dao(db)
-    const collection = dao.findCollectionByNameOrId("lngf8rb3dqu86r3")
-    collection.name = "posts_new"
-    return dao.saveCollection(collection)
-  }, (db) => {
-    // down
-    const dao = new Dao(db)
-    const collection = dao.findCollectionByNameOrId("lngf8rb3dqu86r3")
-    collection.name = "posts_old"
-    return dao.saveCollection(collection)
-  })
-  ```
-
-- Added new `Dao` helpers to make it easier fetching and updating the app settings from a migration:
-  ```go
-  dao.FindSettings([optEncryptionKey])
-  dao.SaveSettings(newSettings, [optEncryptionKey])
-  ```
-
-- Moved `core.Settings` to `models/settings.Settings`:
-  ```
-  core.Settings{}           -> settings.Settings{}
-  core.NewSettings()        -> settings.New()
-  core.MetaConfig{}         -> settings.MetaConfig{}
-  core.LogsConfig{}         -> settings.LogsConfig{}
-  core.SmtpConfig{}         -> settings.SmtpConfig{}
-  core.S3Config{}           -> settings.S3Config{}
-  core.TokenConfig{}        -> settings.TokenConfig{}
-  core.AuthProviderConfig{} -> settings.AuthProviderConfig{}
-  ```
-
-- Changed the `mailer.Mailer` interface (**minor breaking if you are sending custom emails**):
-  ```go
-  // Old:
-  app.NewMailClient().Send(from, to, subject, html, attachments?)
-
-  // New:
-  app.NewMailClient().Send(&mailer.Message{
-    From: from,
-    To: to,
-    Subject: subject,
-    HTML: html,
-    Attachments: attachments,
-    // new configurable fields
-    Bcc: []string{"bcc1@example.com", "bcc2@example.com"},
-    Cc: []string{"cc1@example.com", "cc2@example.com"},
-    Headers: map[string]string{"Custom-Header": "test"},
-    Text: "custom plain text version",
-  })
-  ```
-  The new `*mailer.Message` struct is also now a member of the `MailerRecordEvent` and `MailerAdminEvent` events.
-
-- Other minor UI fixes and improvements
-
-
-## v0.8.0
-
-**⚠️ This release contains breaking changes and requires some manual migration steps!**
-
-The biggest change is the merge of the `User` models and the `profiles` collection per [#376](https://github.com/pocketbase/pocketbase/issues/376).
-There is no longer `user` type field and the users are just an "auth" collection (we now support **collection types**, currently only "base" and "auth").
-This should simplify the users management and at the same time allow us to have unlimited multiple "auth" collections each with their own custom fields and authentication options (eg. staff, client, etc.).
-
-In addition to the `Users` and `profiles` merge, this release comes with several other improvements:
-
-- Added indirect expand support [#312](https://github.com/pocketbase/pocketbase/issues/312#issuecomment-1242893496).
-
-- The `json` field type now supports filtering and sorting [#423](https://github.com/pocketbase/pocketbase/issues/423#issuecomment-1258302125).
-
-- The `relation` field now allows unlimited `maxSelect` (aka. without upper limit).
-
-- Added support for combined email/username + password authentication (see below `authWithPassword()`).
-
-- Added support for full _"manager-subordinate"_ users management, including a special API rule to allow directly changing system fields like email, password, etc. without requiring `oldPassword` or other user verification.
-
-- Enabled OAuth2 account linking on authorized request from the same auth collection (_this is useful for example if the OAuth2 provider doesn't return an email and you want to associate it with the current logged in user_).
-
-- Added option to toggle the record columns visibility from the table listing.
-
-- Added support for collection schema fields reordering.
-
-- Added several new OAuth2 providers (Microsoft Azure AD, Spotify, Twitch, Kakao).
-
-- Improved memory usage on large file uploads [#835](https://github.com/pocketbase/pocketbase/discussions/835).
-
-- More detailed API preview docs and site documentation (the repo is located at https://github.com/pocketbase/site).
-
-- Other minor performance improvements (mostly related to the search apis).
-
-### Migrate from v0.7.x
-
-- **[Data](#data)**
-- **[SDKs](#sdks)**
-- **[API](#api)**
-- **[Internals](#internals)**
-
-#### Data
-
-The merge of users and profiles comes with several required db changes.
-The easiest way to apply them is to use the new temporary `upgrade` command:
-
-```sh
-# make sure to have a copy of your pb_data in case something fails
-cp -r ./pb_data ./pb_data_backup
-
-# run the upgrade command
-./pocketbase08 upgrade
-
-# start the application as usual
-./pocketbase08 serve
-```
-
-The upgrade command:
-
-- Creates a new `users` collection with merged fields from the `_users` table and the `profiles` collection.
-  The new user records will have the ids from the `profiles` collection.
-- Changes all `user` type fields to `relation` and update the references to point to the new user ids.
-- Renames all `@collection.profiles.*`, `@request.user.*` and `@request.user.profile.*` filters to `@collection.users.*` and `@request.auth.*`.
-- Appends `2` to all **schema field names** and **api filter rules** that conflicts with the new system reserved ones:
-  ```
-  collectionId   => collectionId2
-  collectionName => collectionName2
-  expand         => expand2
-
-  // only for the "profiles" collection fields:
-  username               => username2
-  email                  => email2
-  emailVisibility        => emailVisibility2
-  verified               => verified2
-  tokenKey               => tokenKey2
-  passwordHash           => passwordHash2
-  lastResetSentAt        => lastResetSentAt2
-  lastVerificationSentAt => lastVerificationSentAt2
-  ```
-
-#### SDKs
-
-Please check the individual SDK package changelog and apply the necessary changes in your code:
-
-- [**JavaScript SDK changelog**](https://github.com/pocketbase/js-sdk/blob/master/CHANGELOG.md)
-  ```sh
-  npm install pocketbase@latest --save
-  ```
-
-- [**Dart SDK changelog**](https://github.com/pocketbase/dart-sdk/blob/master/CHANGELOG.md)
-
-  ```sh
-  dart pub add pocketbase:^0.5.0
-  # or with Flutter:
-  flutter pub add pocketbase:^0.5.0
-  ```
-
-#### API
-
-> _**You don't have to read this if you are using an official SDK.**_
-
-- The authorization schema is no longer necessary. Now it is auto detected from the JWT token payload:
-  <table class="d-table" width="100%">
-    <tr>
-      <th>Old</th>
-      <th>New</th>
-    </tr>
-    <tr valign="top">
-      <td>Authorization: Admin TOKEN</td>
-      <td>Authorization: TOKEN</td>
-    </tr>
-    <tr valign="top">
-      <td>Authorization: User TOKEN</td>
-      <td>Authorization: TOKEN</td>
-    </tr>
-  </table>
-
-- All datetime stings are now returned in ISO8601 format - with _Z_ suffix and space as separator between the date and time part:
-  <table class="d-table" width="100%">
-    <tr>
-      <th>Old</th>
-      <th>New</th>
-    </tr>
-    <tr valign="top">
-      <td>2022-01-02 03:04:05.678</td>
-      <td>2022-01-02 03:04:05.678<strong>Z</strong></td>
-    </tr>
-  </table>
-
-- Removed the `@` prefix from the system record fields for easier json parsing:
-  <table class="d-table" width="100%">
-    <tr>
-      <th>Old</th>
-      <th>New</th>
-    </tr>
-    <tr valign="top">
-      <td><strong>@</strong>collectionId</td>
-      <td>collectionId</td>
-    </tr>
-    <tr valign="top">
-      <td><strong>@</strong>collectionName</td>
-      <td>collectionName</td>
-    </tr>
-    <tr valign="top">
-      <td><strong>@</strong>expand</td>
-      <td>expand</td>
-    </tr>
-  </table>
-
-- All users api handlers are moved under `/api/collections/:collection/`:
-  <table class="d-table" width="100%">
-    <tr>
-      <th>Old</th>
-      <th>New</th>
-    </tr>
-    <tr valign="top">
-      <td>
-        <em>GET /api/<strong>users</strong>/auth-methods</em>
-      </td>
-      <td>
-        <em>GET /api/<strong>collections/:collection</strong>/auth-methods</em>
-      </td>
-    </tr>
-    <tr valign="top">
-      <td>
-        <em>POST /api/<strong>users/refresh</strong></em>
-      </td>
-      <td>
-        <em>POST /api/<strong>collections/:collection/auth-refresh</strong></em>
-      </td>
-    </tr>
-    <tr valign="top">
-      <td><em>POST /api/<strong>users/auth-via-oauth2</strong></em></td>
-      <td>
-        <em>POST /api/<strong>collections/:collection/auth-with-oauth2</strong></em>
-        <br/>
-        <em>You can now also pass optional <code>createData</code> object on OAuth2 sign-up.</em>
-        <br/>
-        <em>Also please note that now required user/profile fields are properly validated when creating new auth model on OAuth2 sign-up.</em>
-      </td>
-    </tr>
-    <tr valign="top">
-      <td><em>POST /api/<strong>users/auth-via-email</strong></em></td>
-      <td>
-        <em>POST /api/<strong>collections/:collection/auth-with-password</strong></em>
-        <br/>
-        <em>Handles username/email + password authentication.</em>
-        <br/>
-        <code>{"identity": "usernameOrEmail", "password": "123456"}</code>
-      </td>
-    </tr>
-    <tr valign="top">
-      <td><em>POST /api/<strong>users</strong>/request-password-reset</em></td>
-      <td><em>POST /api/<strong>collections/:collection</strong>/request-password-reset</em></td>
-    </tr>
-    <tr valign="top">
-      <td><em>POST /api/<strong>users</strong>/confirm-password-reset</em></td>
-      <td><em>POST /api/<strong>collections/:collection</strong>/confirm-password-reset</em></td>
-    </tr>
-    <tr valign="top">
-      <td><em>POST /api/<strong>users</strong>/request-verification</em></td>
-      <td><em>POST /api/<strong>collections/:collection</strong>/request-verification</em></td>
-    </tr>
-    <tr valign="top">
-      <td><em>POST /api/<strong>users</strong>/confirm-verification</em></td>
-      <td><em>POST /api/<strong>collections/:collection</strong>/confirm-verification</em></td>
-    </tr>
-    <tr valign="top">
-      <td><em>POST /api/<strong>users</strong>/request-email-change</em></td>
-      <td><em>POST /api/<strong>collections/:collection</strong>/request-email-change</em></td>
-    </tr>
-    <tr valign="top">
-      <td><em>POST /api/<strong>users</strong>/confirm-email-change</em></td>
-      <td><em>POST /api/<strong>collections/:collection</strong>/confirm-email-change</em></td>
-    </tr>
-    <tr valign="top">
-      <td><em>GET /api/<strong>users</strong></em></td>
-      <td><em>GET /api/<strong>collections/:collection/records</strong></em></td>
-    </tr>
-    <tr valign="top">
-      <td><em>GET /api/<strong>users</strong>/:id</em></td>
-      <td><em>GET /api/<strong>collections/:collection/records</strong>/:id</em></td>
-    </tr>
-    <tr valign="top">
-      <td><em>POST /api/<strong>users</strong></em></td>
-      <td><em>POST /api/<strong>collections/:collection/records</strong></em></td>
-    </tr>
-    <tr valign="top">
-      <td><em>PATCH /api/<strong>users</strong>/:id</em></td>
-      <td><em>PATCH /api/<strong>collections/:collection/records</strong>/:id</em></td>
-    </tr>
-    <tr valign="top">
-      <td><em>DELETE /api/<strong>users</strong>/:id</em></td>
-      <td><em>DELETE /api/<strong>collections/:collection/records</strong>/:id</em></td>
-    </tr>
-    <tr valign="top">
-      <td><em>GET /api/<strong>users</strong>/:id/external-auths</em></td>
-      <td><em>GET /api/<strong>collections/:collection/records</strong>/:id/external-auths</em></td>
-    </tr>
-    <tr valign="top">
-      <td><em>DELETE /api/<strong>users</strong>/:id/external-auths/:provider</em></td>
-      <td><em>DELETE /api/<strong>collections/:collection/records</strong>/:id/external-auths/:provider</em></td>
-    </tr>
-  </table>
-
-  _In relation to the above changes, the `user` property in the auth response is renamed to `record`._
-
-- The admins api was also updated for consistency with the users api changes:
-  <table class="d-table" width="100%">
-    <tr>
-      <th>Old</th>
-      <th>New</th>
-    </tr>
-    <tr valign="top">
-      <td>
-        <em>POST /api/admins/<strong>refresh</strong></em>
-      </td>
-      <td>
-        <em>POST /api/admins/<strong>auth-refresh</strong></em>
-      </td>
-    </tr>
-    <tr valign="top">
-      <td><em>POST /api/admins/<strong>auth-via-email</strong></em></td>
-      <td>
-        <em>POST /api/admins/<strong>auth-with-password</strong></em>
-        <br />
-        <code>{"identity": "test@example.com", "password": "123456"}</code>
-        <br />
-        (notice that the <code>email</code> body field was renamed to <code>identity</code>)
-      </td>
-    </tr>
-  </table>
-
-- To prevent confusion with the auth method responses, the following endpoints now returns 204 with empty body (previously 200 with token and auth model):
-  ```
-  POST /api/admins/confirm-password-reset
-  POST /api/collections/:collection/confirm-password-reset
-  POST /api/collections/:collection/confirm-verification
-  POST /api/collections/:collection/confirm-email-change
-  ```
-
-- Renamed the "user" related settings fields returned by `GET /api/settings`:
-  <table class="d-table" width="100%">
-    <tr>
-      <th>Old</th>
-      <th>New</th>
-    </tr>
-    <tr valign="top">
-      <td><strong>user</strong>AuthToken</td>
-      <td><strong>record</strong>AuthToken</td>
-    </tr>
-    <tr valign="top">
-      <td><strong>user</strong>PasswordResetToken</td>
-      <td><strong>record</strong>PasswordResetToken</td>
-    </tr>
-    <tr valign="top">
-      <td><strong>user</strong>EmailChangeToken</td>
-      <td><strong>record</strong>EmailChangeToken</td>
-    </tr>
-    <tr valign="top">
-      <td><strong>user</strong>VerificationToken</td>
-      <td><strong>record</strong>VerificationToken</td>
-    </tr>
-  </table>
-
-#### Internals
-
-> _**You don't have to read this if you are not using PocketBase as framework.**_
-
-- Removed `forms.New*WithConfig()` factories to minimize ambiguities.
-  If you need to pass a transaction Dao you can use the new `SetDao(dao)` method available to the form instances.
-
-- `forms.RecordUpsert.LoadData(data map[string]any)` now can bulk load external data from a map.
-  To load data from a request instance, you could use `forms.RecordUpsert.LoadRequest(r, optKeysPrefix = "")`.
-
-- `schema.RelationOptions.MaxSelect` has new type `*int` (_you can use the new `types.Pointer(123)` helper to assign pointer values_).
-
-- Renamed the constant `apis.ContextUserKey` (_"user"_) to `apis.ContextAuthRecordKey` (_"authRecord"_).
-
-- Replaced user related middlewares with their auth record alternative:
-  <table class="d-table" width="100%">
-    <tr>
-      <th>Old</th>
-      <th>New</th>
-    </tr>
-    <tr valign="top">
-      <td>apis.Require<strong>User</strong>Auth()</td>
-      <td>apis.Require<strong>Record</strong>Auth(<strong>optCollectionNames ...string</strong>)</td>
-    </tr>
-    <tr valign="top">
-      <td>apis.RequireAdminOr<strong>User</strong>Auth()</td>
-      <td>apis.RequireAdminOr<strong>Record</strong>Auth(<strong>optCollectionNames ...string</strong>)</td>
-    </tr>
-    <tr valign="top">
-      <td>N/A</td>
-      <td>
-        <strong>RequireSameContextRecordAuth()</strong>
-        <br/>
-        <em>(requires the auth record to be from the same context collection)</em>
-      </td>
-    </tr>
-  </table>
-
-- The following record Dao helpers now uses the collection id or name instead of `*models.Collection` instance to reduce the verbosity when fetching records:
-  <table class="d-table" width="100%">
-    <tr>
-      <th>Old</th>
-      <th>New</th>
-    </tr>
-    <tr valign="top">
-      <td>dao.FindRecordById(<strong>collection</strong>, ...)</td>
-      <td>dao.FindRecordById(<strong>collectionNameOrId</strong>, ...)</td>
-    </tr>
-    <tr valign="top">
-      <td>dao.FindRecordsByIds(<strong>collection</strong>, ...)</td>
-      <td>dao.FindRecordsByIds(<strong>collectionNameOrId</strong>, ...)</td>
-    </tr>
-    <tr valign="top">
-      <td>dao.FindRecordsByExpr(<strong>collection</strong>, ...)</td>
-      <td>dao.FindRecordsByExpr(<strong>collectionNameOrId</strong>, ...)</td>
-    </tr>
-    <tr valign="top">
-      <td>dao.FindFirstRecordByData(<strong>collection</strong>, ...)</td>
-      <td>dao.FindFirstRecordByData(<strong>collectionNameOrId</strong>, ...)</td>
-    </tr>
-    <tr valign="top">
-      <td>dao.IsRecordValueUnique(<strong>collection</strong>, ...)</td>
-      <td>dao.IsRecordValueUnique(<strong>collectionNameOrId</strong>, ...)</td>
-    </tr>
-  </table>
-
-- Replaced all User related Dao helpers with Record equivalents:
-  <table class="d-table" width="100%">
-    <tr>
-      <th>Old</th>
-      <th>New</th>
-    </tr>
-    <tr valign="top">
-      <td>dao.UserQuery()</td>
-      <td>dao.RecordQuery(collection)</td>
-    </tr>
-    <tr valign="top">
-      <td>dao.FindUserById(id)</td>
-      <td>dao.FindRecordById(collectionNameOrId, id)</td>
-    </tr>
-    <tr valign="top">
-      <td>dao.FindUserByToken(token, baseKey)</td>
-      <td>dao.FindAuthRecordByToken(token, baseKey)</td>
-    </tr>
-    <tr valign="top">
-      <td>dao.FindUserByEmail(email)</td>
-      <td>dao.FindAuthRecordByEmail(collectionNameOrId, email)</td>
-    </tr>
-    <tr valign="top">
-      <td>N/A</td>
-      <td>dao.FindAuthRecordByUsername(collectionNameOrId, username)</td>
-    </tr>
-  </table>
-
-- Moved the formatted `ApiError` struct and factories to the `github.com/pocketbase/pocketbase/apis` subpackage:
-  <table class="d-table" width="100%">
-    <tr>
-      <th>Old</th>
-      <th>New</th>
-    </tr>
-    <tr valign="top">
-      <td colspan="2"><em>Import path</em></td>
-    </tr>
-    <tr valign="top">
-      <td>github.com/pocketbase/pocketbase/<strong>tools/rest</strong></td>
-      <td>github.com/pocketbase/pocketbase/<strong>apis</strong></td>
-    </tr>
-    <tr valign="top">
-      <td colspan="2"><em>Fields</em></td>
-    </tr>
-    <tr valign="top">
-      <td><strong>rest</strong>.ApiError{}</td>
-      <td><strong>apis</strong>.ApiError{}</td>
-    </tr>
-    <tr valign="top">
-      <td><strong>rest</strong>.NewNotFoundError()</td>
-      <td><strong>apis</strong>.NewNotFoundError()</td>
-    </tr>
-    <tr valign="top">
-      <td><strong>rest</strong>.NewBadRequestError()</td>
-      <td><strong>apis</strong>.NewBadRequestError()</td>
-    </tr>
-    <tr valign="top">
-      <td><strong>rest</strong>.NewForbiddenError()</td>
-      <td><strong>apis</strong>.NewForbiddenError()</td>
-    </tr>
-    <tr valign="top">
-      <td><strong>rest</strong>.NewUnauthorizedError()</td>
-      <td><strong>apis</strong>.NewUnauthorizedError()</td>
-    </tr>
-    <tr valign="top">
-      <td><strong>rest</strong>.NewApiError()</td>
-      <td><strong>apis</strong>.NewApiError()</td>
-    </tr>
-  </table>
-
-- Renamed `models.Record` helper getters:
-  <table class="d-table" width="100%">
-    <tr>
-      <th>Old</th>
-      <th>New</th>
-    </tr>
-    <tr valign="top">
-      <td>Set<strong>DataValue</strong></td>
-      <td>Set</td>
-    </tr>
-    <tr valign="top">
-      <td>Get<strong>DataValue</strong></td>
-      <td>Get</td>
-    </tr>
-    <tr valign="top">
-      <td>GetBool<strong>DataValue</strong></td>
-      <td>GetBool</td>
-    </tr>
-    <tr valign="top">
-      <td>GetString<strong>DataValue</strong></td>
-      <td>GetString</td>
-    </tr>
-    <tr valign="top">
-      <td>GetInt<strong>DataValue</strong></td>
-      <td>GetInt</td>
-    </tr>
-    <tr valign="top">
-      <td>GetFloat<strong>DataValue</strong></td>
-      <td>GetFloat</td>
-    </tr>
-    <tr valign="top">
-      <td>GetTime<strong>DataValue</strong></td>
-      <td>GetTime</td>
-    </tr>
-    <tr valign="top">
-      <td>GetDateTime<strong>DataValue</strong></td>
-      <td>GetDateTime</td>
-    </tr>
-    <tr valign="top">
-      <td>GetStringSlice<strong>DataValue</strong></td>
-      <td>GetStringSlice</td>
-    </tr>
-  </table>
-
-- Added new auth collection `models.Record` helpers:
-  ```go
-  func (m *Record) Username() string
-  func (m *Record) SetUsername(username string) error
-  func (m *Record) Email() string
-  func (m *Record) SetEmail(email string) error
-  func (m *Record) EmailVisibility() bool
-  func (m *Record) SetEmailVisibility(visible bool) error
-  func (m *Record) IgnoreEmailVisibility(state bool)
-  func (m *Record) Verified() bool
-  func (m *Record) SetVerified(verified bool) error
-  func (m *Record) TokenKey() string
-  func (m *Record) SetTokenKey(key string) error
-  func (m *Record) RefreshTokenKey() error
-  func (m *Record) LastResetSentAt() types.DateTime
-  func (m *Record) SetLastResetSentAt(dateTime types.DateTime) error
-  func (m *Record) LastVerificationSentAt() types.DateTime
-  func (m *Record) SetLastVerificationSentAt(dateTime types.DateTime) error
-  func (m *Record) ValidatePassword(password string) bool
-  func (m *Record) SetPassword(password string) error
-  ```
-
-- Added option to return serialized custom `models.Record` fields data:
-  ```go
-  func (m *Record) UnknownData() map[string]any
-  func (m *Record) WithUnkownData(state bool)
-  ```
-
-- Deleted `model.User`. Now the user data is stored as an auth `models.Record`.
-  <table class="d-table" width="100%">
-    <tr>
-      <th>Old</th>
-      <th>New</th>
-    </tr>
-    <tr valign="top">
-      <td>User.Email</td>
-      <td>Record.Email()</td>
-    </tr>
-    <tr valign="top">
-      <td>User.TokenKey</td>
-      <td>Record.TokenKey()</td>
-    </tr>
-    <tr valign="top">
-      <td>User.Verified</td>
-      <td>Record.Verified()</td>
-    </tr>
-    <tr valign="top">
-      <td>User.SetPassword()</td>
-      <td>Record.SetPassword()</td>
-    </tr>
-    <tr valign="top">
-      <td>User.RefreshTokenKey()</td>
-      <td>Record.RefreshTokenKey()</td>
-    </tr>
-    <tr valign="top">
-      <td colspan="2"><em>etc.</em></td>
-    </tr>
-  </table>
-
-- Replaced `User` related event hooks with their `Record` alternative:
-  <table class="d-table" width="100%">
-    <tr>
-      <th>Old</th>
-      <th>New</th>
-    </tr>
-    <tr valign="top">
-      <td>OnMailerBefore<strong>User</strong>ResetPasswordSend() *hook.Hook[*Mailer<strong>User</strong>Event]</td>
-      <td>OnMailerBefore<strong>Record</strong>ResetPasswordSend() *hook.Hook[*Mailer<strong>Record</strong>Event]</td>
-    </tr>
-    <tr valign="top">
-      <td>OnMailerAfter<strong>User</strong>ResetPasswordSend() *hook.Hook[*Mailer<strong>User</strong>Event]</td>
-      <td>OnMailerAfter<strong>Record</strong>ResetPasswordSend() *hook.Hook[*Mailer<strong>Record</strong>Event]</td>
-    </tr>
-    <tr valign="top">
-      <td>OnMailerBefore<strong>User</strong>VerificationSend() *hook.Hook[*Mailer<strong>User</strong>Event]</td>
-      <td>OnMailerBefore<strong>Record</strong>VerificationSend() *hook.Hook[*Mailer<strong>Record</strong>Event]</td>
-    </tr>
-    <tr valign="top">
-      <td>OnMailerAfter<strong>User</strong>VerificationSend() *hook.Hook[*Mailer<strong>User</strong>Event]</td>
-      <td>OnMailerAfter<strong>Record</strong>VerificationSend() *hook.Hook[*Mailer<strong>Record</strong>Event]</td>
-    </tr>
-    <tr valign="top">
-      <td>OnMailerBefore<strong>User</strong>ChangeEmailSend() *hook.Hook[*Mailer<strong>User</strong>Event]</td>
-      <td>OnMailerBefore<strong>Record</strong>ChangeEmailSend() *hook.Hook[*Mailer<strong>Record</strong>Event]</td>
-    </tr>
-    <tr valign="top">
-      <td>OnMailerAfter<strong>User</strong>ChangeEmailSend() *hook.Hook[*Mailer<strong>User</strong>Event]</td>
-      <td>OnMailerAfter<strong>Record</strong>ChangeEmailSend() *hook.Hook[*Mailer<strong>Record</strong>Event]</td>
-    </tr>
-    <tr valign="top">
-      <td>On<strong>Users</strong>ListRequest() *hook.Hook[*<strong>User</strong>ListEvent]</td>
-      <td>On<strong>Records</strong>ListRequest() *hook.Hook[*<strong>Records</strong>ListEvent]</td>
-    </tr>
-    <tr valign="top">
-      <td>On<strong>User</strong>ViewRequest() *hook.Hook[*<strong>User</strong>ViewEvent]</td>
-      <td>On<strong>Record</strong>ViewRequest() *hook.Hook[*<strong>Record</strong>ViewEvent]</td>
-    </tr>
-    <tr valign="top">
-      <td>On<strong>User</strong>BeforeCreateRequest() *hook.Hook[*<strong>User</strong>CreateEvent]</td>
-      <td>On<strong>Record</strong>BeforeCreateRequest() *hook.Hook[*<strong>Record</strong>CreateEvent]</td>
-    </tr>
-    <tr valign="top">
-      <td>On<strong>User</strong>AfterCreateRequest() *hook.Hook[*<strong>User</strong>CreateEvent]</td>
-      <td>On<strong>Record</strong>AfterCreateRequest() *hook.Hook[*<strong>Record</strong>CreateEvent]</td>
-    </tr>
-    <tr valign="top">
-      <td>On<strong>User</strong>BeforeUpdateRequest() *hook.Hook[*<strong>User</strong>UpdateEvent]</td>
-      <td>On<strong>Record</strong>BeforeUpdateRequest() *hook.Hook[*<strong>Record</strong>UpdateEvent]</td>
-    </tr>
-    <tr valign="top">
-      <td>On<strong>User</strong>AfterUpdateRequest() *hook.Hook[*<strong>User</strong>UpdateEvent]</td>
-      <td>On<strong>Record</strong>AfterUpdateRequest() *hook.Hook[*<strong>Record</strong>UpdateEvent]</td>
-    </tr>
-    <tr valign="top">
-      <td>On<strong>User</strong>BeforeDeleteRequest() *hook.Hook[*<strong>User</strong>DeleteEvent]</td>
-      <td>On<strong>Record</strong>BeforeDeleteRequest() *hook.Hook[*<strong>Record</strong>DeleteEvent]</td>
-    </tr>
-    <tr valign="top">
-      <td>On<strong>User</strong>AfterDeleteRequest() *hook.Hook[*<strong>User</strong>DeleteEvent]</td>
-      <td>On<strong>Record</strong>AfterDeleteRequest() *hook.Hook[*<strong>Record</strong>DeleteEvent]</td>
-    </tr>
-    <tr valign="top">
-      <td>On<strong>User</strong>AuthRequest() *hook.Hook[*<strong>User</strong>AuthEvent]</td>
-      <td>On<strong>Record</strong>AuthRequest() *hook.Hook[*<strong>Record</strong>AuthEvent]</td>
-    </tr>
-    <tr valign="top">
-      <td>On<strong>User</strong>ListExternalAuths() *hook.Hook[*<strong>User</strong>ListExternalAuthsEvent]</td>
-      <td>On<strong>Record</strong>ListExternalAuths() *hook.Hook[*<strong>Record</strong>ListExternalAuthsEvent]</td>
-    </tr>
-    <tr valign="top">
-      <td>On<strong>User</strong>BeforeUnlinkExternalAuthRequest() *hook.Hook[*<strong>User</strong>UnlinkExternalAuthEvent]</td>
-      <td>On<strong>Record</strong>BeforeUnlinkExternalAuthRequest() *hook.Hook[*<strong>Record</strong>UnlinkExternalAuthEvent]</td>
-    </tr>
-    <tr valign="top">
-      <td>On<strong>User</strong>AfterUnlinkExternalAuthRequest() *hook.Hook[*<strong>User</strong>UnlinkExternalAuthEvent]</td>
-      <td>On<strong>Record</strong>AfterUnlinkExternalAuthRequest() *hook.Hook[*<strong>Record</strong>UnlinkExternalAuthEvent]</td>
-    </tr>
-  </table>
-
-- Replaced `forms.UserEmailLogin{}` with `forms.RecordPasswordLogin{}` (for both username and email depending on which is enabled for the collection).
-
-- Renamed user related `core.Settings` fields:
-  <table class="d-table" width="100%">
-    <tr>
-      <th>Old</th>
-      <th>New</th>
-    </tr>
-    <tr valign="top">
-      <td>core.Settings.<strong>User</strong>AuthToken{}</td>
-      <td>core.Settings.<strong>Record</strong>AuthToken{}</td>
-    </tr>
-    <tr valign="top">
-      <td>core.Settings.<strong>User</strong>PasswordResetToken{}</td>
-      <td>core.Settings.<strong>Record</strong>PasswordResetToken{}</td>
-    </tr>
-    <tr valign="top">
-      <td>core.Settings.<strong>User</strong>EmailChangeToken{}</td>
-      <td>core.Settings.<strong>Record</strong>EmailChangeToken{}</td>
-    </tr>
-    <tr valign="top">
-      <td>core.Settings.<strong>User</strong>VerificationToken{}</td>
-      <td>core.Settings.<strong>Record</strong>VerificationToken{}</td>
-    </tr>
-  </table>
-
-- Marked as "Deprecated" and will be removed in v0.9+:
+    For those of you that extend PocketBase with Go: if your S3 vendor doesn't support the [AWS Data integrity checks](https://docs.aws.amazon.com/sdkref/latest/guide/feature-dataintegrity.html) and you are updating with `go get -u`, then make sure that the `aws-sdk-go-v2` dependencies in your `go.mod` are the same as in the repo:
     ```
-    core.Settings.EmailAuth{}
-    core.EmailAuthConfig{}
-    schema.FieldTypeUser
-    schema.UserOptions{}
+    // go.mod
+    github.com/aws/aws-sdk-go-v2 v1.36.1
+    github.com/aws/aws-sdk-go-v2/config v1.28.10
+    github.com/aws/aws-sdk-go-v2/credentials v1.17.51
+    github.com/aws/aws-sdk-go-v2/feature/s3/manager v1.17.48
+    github.com/aws/aws-sdk-go-v2/service/s3 v1.72.2
+
+    // after that run
+    go clean -modcache && go mod tidy
+    ```
+    _The versions pinning is temporary until the non-AWS S3 vendors patch their implementation or until I manage to find time to remove/replace the `aws-sdk-go-v2` dependency (I'll consider prioritizing it for the v0.26 or v0.27 release)._
+
+
+## v0.25.3
+
+- Added a temporary exception for Backblaze S3 endpoints to exclude the new `aws-sdk-go-v2` checksum headers ([#6440](https://github.com/pocketbase/pocketbase/discussions/6440)).
+
+
+## v0.25.2
+
+- Fixed realtime delete event not being fired for `RecordProxy`-ies and added basic realtime record resolve automated tests ([#6433](https://github.com/pocketbase/pocketbase/issues/6433)).
+
+
+## v0.25.1
+
+- Fixed the batch API Preview success sample response.
+
+- Bumped GitHub action min Go version to 1.23.6 as it comes with a [minor security fix](https://github.com/golang/go/issues?q=milestone%3AGo1.23.6+label%3ACherryPickApproved) for the ppc64le build.
+
+
+## v0.25.0
+
+- ⚠️ Upgraded Google OAuth2 auth, token and userinfo endpoints to their latest versions.
+    _For users that don't do anything custom with the Google OAuth2 data or the OAuth2 auth URL, this should be a non-breaking change. The exceptions that I could find are:_
+    - `/v3/userinfo` auth response changes:
+        ```
+        meta.rawUser.id             => meta.rawUser.sub
+        meta.rawUser.verified_email => meta.rawUser.email_verified
+        ```
+    - `/v2/auth` query parameters changes:
+        If you are specifying custom `approval_prompt=force` query parameter for the OAuth2 auth URL, you'll have to replace it with **`prompt=consent`**.
+
+- Added Trakt OAuth2 provider ([#6338](https://github.com/pocketbase/pocketbase/pull/6338); thanks @aidan-)
+
+- Added support for case-insensitive password auth based on the related UNIQUE index field collation ([#6337](https://github.com/pocketbase/pocketbase/discussions/6337)).
+
+- Enforced `when_required` for the new AWS SDK request and response checksum validations to allow other non-AWS vendors to catch up with new AWS SDK changes (see [#6313](https://github.com/pocketbase/pocketbase/discussions/6313) and [aws/aws-sdk-go-v2#2960](https://github.com/aws/aws-sdk-go-v2/discussions/2960)).
+    _You can set the environment variables `AWS_REQUEST_CHECKSUM_CALCULATION` and `AWS_RESPONSE_CHECKSUM_VALIDATION` to `when_supported` if your S3 vendor supports the [new default integrity protections](https://docs.aws.amazon.com/sdkref/latest/guide/feature-dataintegrity.html)._
+
+- Soft-deprecated `Record.GetUploadedFiles` in favor of `Record.GetUnsavedFiles` to minimize the ambiguities what the method do ([#6269](https://github.com/pocketbase/pocketbase/discussions/6269)).
+
+- Replaced archived `github.com/AlecAivazis/survey` dependency with a simpler  `osutils.YesNoPrompt(message, fallback)` helper.
+
+- Upgraded to `golang-jwt/jwt/v5`.
+
+- Added JSVM `new Timezone(name)` binding for constructing `time.Location` value ([#6219](https://github.com/pocketbase/pocketbase/discussions/6219)).
+
+- Added `inflector.Camelize(str)` and `inflector.Singularize(str)` helper methods.
+
+- Use the non-transactional app instance during the realtime records delete access checks to ensure that cascade deleted records with API rules relying on the parent will be resolved.
+
+- Other minor improvements (_replaced all `bool` exists db scans with `int` for broader drivers compatibility, updated API Preview sample error responses, updated UI dependencies, etc._)
+
+
+## v0.24.4
+
+- Fixed fields extraction for view query with nested comments ([#6309](https://github.com/pocketbase/pocketbase/discussions/6309)).
+
+- Bumped GitHub action min Go version to 1.23.5 as it comes with some [minor security fixes](https://github.com/golang/go/issues?q=milestone%3AGo1.23.5).
+
+
+## v0.24.3
+
+- Fixed incorrectly reported unique validator error for fields starting with name of another field ([#6281](https://github.com/pocketbase/pocketbase/pull/6281); thanks @svobol13).
+
+- Reload the created/edited records data in the RecordsPicker UI.
+
+- Updated Go dependencies.
+
+
+## v0.24.2
+
+- Fixed display fields extraction when there are multiple "Presentable" `relation` fields in a single related collection ([#6229](https://github.com/pocketbase/pocketbase/issues/6229)).
+
+
+## v0.24.1
+
+- Added missing time macros in the UI autocomplete.
+
+- Fixed JSVM types for structs and functions with multiple generic parameters.
+
+
+## v0.24.0
+
+- ⚠️ Removed the "dry submit" when executing the collections Create API rule
+    (you can find more details why this change was introduced and how it could affect your app in https://github.com/pocketbase/pocketbase/discussions/6073).
+    For most users it should be non-breaking change, BUT if you have Create API rules that uses self-references or view counters you may have to adjust them manually.
+    With this change the "multi-match" operators are also normalized in case the targeted collection doesn't have any records
+    (_or in other words, `@collection.example.someField != "test"` will result to `true` if `example` collection has no records because it satisfies the condition that all available "example" records mustn't have `someField` equal to "test"_).
+    As a side-effect of all of the above minor changes, the record create API performance has been also improved ~4x times in high concurrent scenarios (500 concurrent clients inserting total of 50k records - [old (58.409064001s)](https://github.com/pocketbase/benchmarks/blob/54140be5fb0102f90034e1370c7f168fbcf0ddf0/results/hetzner_cax41_cgo.md#creating-50000-posts100k-reqs50000-conc500-rulerequestauthid----requestdatapublicisset--true) vs [new (13.580098262s)](https://github.com/pocketbase/benchmarks/blob/7df0466ac9bd62fe0a1056270d20ef82012f0234/results/hetzner_cax41_cgo.md#creating-50000-posts100k-reqs50000-conc500-rulerequestauthid----requestbodypublicisset--true)).
+
+- ⚠️ Changed the type definition of `store.Store[T any]` to `store.Store[K comparable, T any]` to allow support for custom store key types.
+    For most users it should be non-breaking change, BUT if you are calling `store.New[any](nil)` instances you'll have to specify the store key type, aka. `store.New[string, any](nil)`.
+
+- Added `@yesterday` and `@tomorrow` datetime filter macros.
+
+- Added `:lower` filter modifier (e.g. `title:lower = "lorem"`).
+
+- Added `mailer.Message.InlineAttachments` field for attaching inline files to an email (_aka. `cid` links_).
+
+- Added cache for the JSVM `arrayOf(m)`, `DynamicModel`, etc. dynamic `reflect` created types.
+
+- Added auth collection select for the settings "Send test email" popup ([#6166](https://github.com/pocketbase/pocketbase/issues/6166)).
+
+- Added `record.SetRandomPassword()` to simplify random password generation usually used in the OAuth2 or OTP record creation flows.
+    _The generated ~30 chars random password is assigned directly as bcrypt hash and ignores the `password` field plain value validators like min/max length or regex pattern._
+
+- Added option to list and trigger the registered app level cron jobs via the Web API and UI.
+
+- Added extra validators for the collection field `int64` options (e.g. `FileField.MaxSize`) restricting them to the max safe JSON number (2^53-1).
+
+- Added option to unset/overwrite the default PocketBase superuser installer using `ServeEvent.InstallerFunc`.
+
+- Added `app.FindCachedCollectionReferences(collection, excludeIds)` to speedup records cascade delete almost twice for projects with many collections.
+
+- Added `tests.NewTestAppWithConfig(config)` helper if you need more control over the test configurations like `IsDev`, the number of allowed connections, etc.
+
+- Invalidate all record tokens when the auth record email is changed programmatically or by a superuser ([#5964](https://github.com/pocketbase/pocketbase/issues/5964)).
+
+- Eagerly interrupt waiting for the email alert send in case it takes longer than 15s.
+
+- Normalized the hidden fields filter checks and allow targetting hidden fields in the List API rule.
+
+- Fixed "Unique identify fields" input not refreshing on unique indexes change ([#6184](https://github.com/pocketbase/pocketbase/issues/6184)).
+
+
+## v0.23.12
+
+- Added warning logs in case of mismatched `modernc.org/sqlite` and `modernc.org/libc` versions ([#6136](https://github.com/pocketbase/pocketbase/issues/6136#issuecomment-2556336962)).
+
+- Skipped the default body size limit middleware for the backup upload endpoint ([#6152](https://github.com/pocketbase/pocketbase/issues/6152)).
+
+
+## v0.23.11
+
+- Upgraded `golang.org/x/net` to 0.33.0 to fix [CVE-2024-45338](https://www.cve.org/CVERecord?id=CVE-2024-45338).
+  _PocketBase uses the vulnerable functions primarily for the auto html->text mail generation, but most applications shouldn't be affected unless you are manually embedding unrestricted user provided value in your mail templates._
+
+
+## v0.23.10
+
+- Renew the superuser file token cache when clicking on the thumb preview or download link ([#6137](https://github.com/pocketbase/pocketbase/discussions/6137)).
+
+- Upgraded `modernc.org/sqlite` to 1.34.3 to fix "disk io" error on arm64 systems.
+    _If you are extending PocketBase with Go and upgrading with `go get -u` make sure to manually set in your go.mod the `modernc.org/libc` indirect dependency to v1.55.3, aka. the exact same version the driver is using._
+
+
+## v0.23.9
+
+- Replaced `strconv.Itoa` with `strconv.FormatInt` to avoid the int64->int conversion overflow on 32-bit platforms ([#6132](https://github.com/pocketbase/pocketbase/discussions/6132)).
+
+
+## v0.23.8
+
+- Fixed Model->Record and Model->Collection hook events sync for nested and/or inner-hook transactions ([#6122](https://github.com/pocketbase/pocketbase/discussions/6122)).
+
+- Other minor improvements (updated Go and npm deps, added extra escaping for the default mail record params in case the emails are stored as html files, fixed code comment typos, etc.).
+
+
+## v0.23.7
+
+- Fixed JSVM exception -> Go error unwrapping when throwing errors from non-request hooks ([#6102](https://github.com/pocketbase/pocketbase/discussions/6102)).
+
+
+## v0.23.6
+
+- Fixed `$filesystem.fileFromURL` documentation and generated type ([#6058](https://github.com/pocketbase/pocketbase/issues/6058)).
+
+- Fixed `X-Forwarded-For` header typo in the suggested UI "Common trusted proxy" headers ([#6063](https://github.com/pocketbase/pocketbase/pull/6063)).
+
+- Updated the `text` field max length validator error message to make it more clear ([#6066](https://github.com/pocketbase/pocketbase/issues/6066)).
+
+- Other minor fixes (updated Go deps, skipped unnecessary validator check when the default primary key pattern is used, updated JSVM types, etc.).
+
+
+## v0.23.5
+
+- Fixed UI logs search not properly accounting for the "Include requests by superusers" toggle when multiple search expressions are used.
+
+- Fixed `text` field max validation error message ([#6053](https://github.com/pocketbase/pocketbase/issues/6053)).
+
+- Other minor fixes (comment typos, JSVM types update).
+
+- Updated Go deps and the min Go release GitHub action version to 1.23.4.
+
+
+## v0.23.4
+
+- Fixed `autodate` fields not refreshing when calling `Save` multiple times on the same `Record` instance ([#6000](https://github.com/pocketbase/pocketbase/issues/6000)).
+
+- Added more descriptive test OTP id and failure log message ([#5982](https://github.com/pocketbase/pocketbase/discussions/5982)).
+
+- Moved the default UI CSP from meta tag to response header ([#5995](https://github.com/pocketbase/pocketbase/discussions/5995)).
+
+- Updated Go and npm dependencies.
+
+
+## v0.23.3
+
+- Fixed Gzip middleware not applying when serving static files.
+
+- Fixed `Record.Fresh()`/`Record.Clone()` methods not properly cloning `autodate` fields ([#5973](https://github.com/pocketbase/pocketbase/discussions/5973)).
+
+
+## v0.23.2
+
+- Fixed `RecordQuery()` custom struct scanning ([#5958](https://github.com/pocketbase/pocketbase/discussions/5958)).
+
+- Fixed `--dev` log query print formatting.
+
+- Added support for passing more than one id in the `Hook.Unbind` method for consistency with the router.
+
+- Added collection rules change list in the confirmation popup
+  (_to avoid getting anoying during development, the rules confirmation currently is enabled only when using https_).
+
+
+## v0.23.1
+
+- Added `RequestEvent.Blob(status, contentType, bytes)` response write helper ([#5940](https://github.com/pocketbase/pocketbase/discussions/5940)).
+
+- Added more descriptive error messages.
+
+
+## v0.23.0
+
+> [!NOTE]
+> You don't have to upgrade to PocketBase v0.23.0 if you are not planning further developing
+> your existing app and/or are satisfied with the v0.22.x features set. There are no identified critical issues
+> with PocketBase v0.22.x yet and in the case of critical bugs and security vulnerabilities, the fixes
+> will be backported for at least until Q1 of 2025 (_if not longer_).
+>
+> **If you don't plan upgrading make sure to pin the SDKs version to their latest PocketBase v0.22.x compatible:**
+> - JS SDK: `<0.22.0`
+> - Dart SDK: `<0.19.0`
+
+> [!CAUTION]
+> This release introduces many Go/JSVM and Web APIs breaking changes!
+>
+> Existing `pb_data` will be automatically upgraded with the start of the new executable,
+> but custom Go or JSVM (`pb_hooks`, `pb_migrations`) and JS/Dart SDK code will have to be migrated manually.
+> Please refer to the below upgrade guides:
+> - Go:   https://pocketbase.io/v023upgrade/go/.
+> - JSVM: https://pocketbase.io/v023upgrade/jsvm/.
+>
+> If you had already switched to some of the earlier `<v0.23.0-rc14` versions and have generated a full collections snapshot migration (aka. `./pocketbase migrate collections`), then you may have to regenerate the migration file to ensure that it includes the latest changes.
+
+PocketBase v0.23.0 is a major refactor of the internals with the overall goal of making PocketBase an easier to use Go framework.
+There are a lot of changes but to highlight some of the most notable ones:
+
+- New and more [detailed documentation](https://pocketbase.io/docs/).
+  _The old documentation could be accessed at [pocketbase.io/old](https://pocketbase.io/old/)._
+- Replaced `echo` with a new router built on top of the Go 1.22 `net/http` mux enhancements.
+- Merged `daos` packages in `core.App` to simplify the DB operations (_the `models` package structs are also migrated in `core`_).
+- Option to specify custom `DBConnect` function as part of the app configuration to allow different `database/sql` SQLite drivers (_turso/libsql, sqlcipher, etc._) and custom builds.
+  _Note that we no longer loads the `mattn/go-sqlite3` driver by default when building with `CGO_ENABLED=1` to avoid `multiple definition` linker errors in case different CGO SQLite drivers or builds are used. You can find an example how to enable it back if you want to in the [new documentation](https://pocketbase.io/docs/go-overview/#github-commattngo-sqlite3)._
+- New hooks allowing better control over the execution chain and error handling (_including wrapping an entire hook chain in a single DB transaction_).
+- Various `Record` model improvements (_support for get/set modifiers, simplfied file upload by treating the file(s) as regular field value like `record.Set("document", file)`, etc._).
+- Dedicated fields structs with safer defaults to make it easier creating/updating collections programmatically.
+- Option to mark field as "Hidden", disallowing regular users to read or modify it (_there is also a dedicated Record hook to hide/unhide Record fields programmatically from a single place_).
+- Option to customize the default system collection fields (`id`, `email`, `password`, etc.).
+- Admins are now system `_superusers` auth records.
+- Builtin rate limiter (_supports tags, wildcards and exact routes matching_).
+- Batch/transactional Web API endpoint.
+- Impersonate Web API endpoint (_it could be also used for generating fixed/non-refreshable superuser tokens, aka. "API keys"_).
+- Support for custom user request activity log attributes.
+- One-Time Password (OTP) auth method (_via email code_).
+- Multi-Factor Authentication (MFA) support (_currently requires any 2 different auth methods to be used_).
+- Support for Record "proxy/projection" in preparation for the planned autogeneration of typed Go record models.
+- Linear OAuth2 provider ([#5909](https://github.com/pocketbase/pocketbase/pull/5909); thanks @chnfyi).
+- WakaTime OAuth2 provider ([#5829](https://github.com/pocketbase/pocketbase/pull/5829); thanks @tigawanna).
+- Notion OAuth2 provider ([#4999](https://github.com/pocketbase/pocketbase/pull/4999); thanks @s-li1).
+- monday.com OAuth2 provider ([#5346](https://github.com/pocketbase/pocketbase/pull/5346); thanks @Jaytpa01).
+- New Instagram provider compatible with the new Instagram Login APIs ([#5588](https://github.com/pocketbase/pocketbase/pull/5588); thanks @pnmcosta).
+    _The provider key is `instagram2` to prevent conflicts with existing linked users._
+- Option to retrieve the OIDC OAuth2 user info from the `id_token` payload for the cases when the provider doesn't have a dedicated user info endpoint.
+- Various minor UI improvements (_recursive `Presentable` view, slightly different collection options organization, zoom/pan for the logs chart, etc._)
+- and many more...
+
+#### Go/JSVM APIs changes
+
+> - Go:   https://pocketbase.io/v023upgrade/go/.
+> - JSVM: https://pocketbase.io/v023upgrade/jsvm/.
+
+#### SDKs changes
+
+- [JS SDK v0.22.0](https://github.com/pocketbase/js-sdk/blob/master/CHANGELOG.md)
+- [Dart SDK v0.19.0](https://github.com/pocketbase/dart-sdk/blob/master/CHANGELOG.md)
+
+#### Web APIs changes
+
+- New `POST /api/batch` endpoint.
+
+- New `GET /api/collections/meta/scaffolds` endpoint.
+
+- New `DELETE /api/collections/{collection}/truncate` endpoint.
+
+- New `POST /api/collections/{collection}/request-otp` endpoint.
+
+- New `POST /api/collections/{collection}/auth-with-otp` endpoint.
+
+- New `POST /api/collections/{collection}/impersonate/{id}` endpoint.
+
+- ⚠️ If you are constructing requests to `/api/*` routes manually remove the trailing slash (_there is no longer trailing slash removal middleware registered by default_).
+
+- ⚠️ Removed `/api/admins/*` endpoints because admins are converted to `_superusers` auth collection records.
+
+- ⚠️ Previously when uploading new files to a multiple `file` field, new files were automatically appended to the existing field values.
+     This behaviour has changed with v0.23+ and for consistency with the other multi-valued fields when uploading new files they will replace the old ones. If you want to prepend or append new files to an existing multiple `file` field value you can use the `+` prefix or suffix:
+     ```js
+     "documents": [file1, file2]  // => [file1_name, file2_name]
+     "+documents": [file1, file2] // => [file1_name, file2_name, old1_name, old2_name]
+     "documents+": [file1, file2] // => [old1_name, old2_name, file1_name, file2_name]
+     ```
+
+- ⚠️ Removed `GET /records/{id}/external-auths` and `DELETE /records/{id}/external-auths/{provider}` endpoints because this is now handled by sending list and delete requests to the `_externalAuths` collection.
+
+- ⚠️ Changes to the app settings model fields and response (+new options such as `trustedProxy`, `rateLimits`, `batch`, etc.). The app settings Web APIs are mostly used by the Dashboard UI and rarely by the end users, but if you want to check all settings changes please refer to the [Settings Go struct](https://github.com/pocketbase/pocketbase/blob/develop/core/settings_model.go#L121).
+
+- ⚠️ New flatten Collection model and fields structure. The Collection model Web APIs are mostly used by the Dashboard UI and rarely by the end users, but if you want to check all changes please refer to the [Collection Go struct](https://github.com/pocketbase/pocketbase/blob/develop/core/collection_model.go#L308).
+
+- ⚠️ The top level error response `code` key was renamed to `status` for consistency with the Go APIs.
+    The error field key remains `code`:
+    ```js
+    {
+        "status": 400, // <-- old: "code"
+        "message": "Failed to create record.",
+        "data": {
+            "title": {
+                "code": "validation_required",
+                "message": "Missing required value."
+            }
+        }
+    }
     ```
 
-- The second argument of `apis.StaticDirectoryHandler(fileSystem, enableIndexFallback)` now is used to enable/disable index.html forwarding on missing file (eg. in case of SPA).
+- ⚠️ New fields in the `GET /api/collections/{collection}/auth-methods` response.
+    _The old `authProviders`, `usernamePassword`, `emailPassword` fields are still returned in the response but are considered deprecated and will be removed in the future._
+    ```js
+    {
+        "mfa": {
+            "duration": 100,
+            "enabled": true
+        },
+        "otp": {
+            "duration": 0,
+            "enabled": false
+        },
+        "password": {
+            "enabled": true,
+            "identityFields": ["email", "username"]
+        },
+        "oauth2": {
+            "enabled": true,
+            "providers": [{"name": "gitlab", ...}, {"name": "google", ...}]
+        },
+        // old fields...
+    }
+    ```
+
+- ⚠️ Soft-deprecated the OAuth2 auth success `meta.avatarUrl` field in favour of `meta.avatarURL`.

@@ -13,23 +13,50 @@ import (
 	"sort"
 	"strconv"
 	"strings"
-	"time"
 
-	"github.com/aws/aws-sdk-go/aws"
-	"github.com/aws/aws-sdk-go/aws/credentials"
-	"github.com/aws/aws-sdk-go/aws/session"
+	"github.com/aws/aws-sdk-go-v2/aws"
+	"github.com/aws/aws-sdk-go-v2/config"
+	"github.com/aws/aws-sdk-go-v2/credentials"
+	"github.com/aws/aws-sdk-go-v2/service/s3"
 	"github.com/disintegration/imaging"
 	"github.com/gabriel-vasile/mimetype"
+	"github.com/pocketbase/pocketbase/tools/filesystem/internal/s3lite"
 	"github.com/pocketbase/pocketbase/tools/list"
 	"gocloud.dev/blob"
 	"gocloud.dev/blob/fileblob"
-	"gocloud.dev/blob/s3blob"
+	"gocloud.dev/gcerrors"
 )
+
+var gcpIgnoreHeaders = []string{"Accept-Encoding"}
+
+var ErrNotFound = errors.New("blob not found")
 
 type System struct {
 	ctx    context.Context
 	bucket *blob.Bucket
 }
+
+// -------------------------------------------------------------------
+
+// @todo delete after replacing the aws-sdk-go-v2 dependency
+//
+// enforce WHEN_REQUIRED by default in case the user has updated AWS SDK dependency
+// https://github.com/aws/aws-sdk-go-v2/discussions/2960
+// https://github.com/pocketbase/pocketbase/discussions/6440
+// https://github.com/pocketbase/pocketbase/discussions/6313
+func init() {
+	reqEnv := os.Getenv("AWS_REQUEST_CHECKSUM_CALCULATION")
+	if reqEnv == "" {
+		os.Setenv("AWS_REQUEST_CHECKSUM_CALCULATION", "WHEN_REQUIRED")
+	}
+
+	resEnv := os.Getenv("AWS_RESPONSE_CHECKSUM_VALIDATION")
+	if resEnv == "" {
+		os.Setenv("AWS_RESPONSE_CHECKSUM_VALIDATION", "WHEN_REQUIRED")
+	}
+}
+
+// -------------------------------------------------------------------
 
 // NewS3 initializes an S3 filesystem instance.
 //
@@ -44,19 +71,36 @@ func NewS3(
 ) (*System, error) {
 	ctx := context.Background() // default context
 
-	cred := credentials.NewStaticCredentials(accessKey, secretKey, "")
+	cred := credentials.NewStaticCredentialsProvider(accessKey, secretKey, "")
 
-	sess, err := session.NewSession(&aws.Config{
-		Region:           aws.String(region),
-		Endpoint:         aws.String(endpoint),
-		Credentials:      cred,
-		S3ForcePathStyle: aws.Bool(s3ForcePathStyle),
-	})
+	cfg, err := config.LoadDefaultConfig(
+		ctx,
+		config.WithCredentialsProvider(cred),
+		config.WithRegion(region),
+	)
 	if err != nil {
 		return nil, err
 	}
 
-	bucket, err := s3blob.OpenBucket(ctx, sess, bucketName, nil)
+	client := s3.NewFromConfig(cfg, func(o *s3.Options) {
+		// ensure that the endpoint has url scheme for
+		// backward compatibility with v1 of the aws sdk
+		if !strings.Contains(endpoint, "://") {
+			endpoint = "https://" + endpoint
+		}
+		o.BaseEndpoint = aws.String(endpoint)
+
+		o.UsePathStyle = s3ForcePathStyle
+
+		// Google Cloud Storage alters the Accept-Encoding header,
+		// which breaks the v2 request signature
+		// (https://github.com/aws/aws-sdk-go-v2/issues/1816)
+		if strings.Contains(endpoint, "storage.googleapis.com") {
+			ignoreSigningHeaders(o, gcpIgnoreHeaders)
+		}
+	})
+
+	bucket, err := s3lite.OpenBucketV2(ctx, client, bucketName, nil)
 	if err != nil {
 		return nil, err
 	}
@@ -75,12 +119,19 @@ func NewLocal(dirPath string) (*System, error) {
 		return nil, err
 	}
 
-	bucket, err := fileblob.OpenBucket(dirPath, nil)
+	bucket, err := fileblob.OpenBucket(dirPath, &fileblob.Options{
+		NoTempDir: true,
+	})
 	if err != nil {
 		return nil, err
 	}
 
 	return &System{ctx: ctx, bucket: bucket}, nil
+}
+
+// SetContext assigns the specified context to the current filesystem.
+func (s *System) SetContext(ctx context.Context) {
+	s.ctx = ctx
 }
 
 // Close releases any resources used for the related filesystem.
@@ -89,13 +140,81 @@ func (s *System) Close() error {
 }
 
 // Exists checks if file with fileKey path exists or not.
+//
+// If the file doesn't exist returns false and ErrNotFound.
 func (s *System) Exists(fileKey string) (bool, error) {
-	return s.bucket.Exists(s.ctx, fileKey)
+	exists, err := s.bucket.Exists(s.ctx, fileKey)
+
+	if gcerrors.Code(err) == gcerrors.NotFound {
+		err = ErrNotFound
+	}
+
+	return exists, err
 }
 
 // Attributes returns the attributes for the file with fileKey path.
+//
+// If the file doesn't exist it returns ErrNotFound.
 func (s *System) Attributes(fileKey string) (*blob.Attributes, error) {
-	return s.bucket.Attributes(s.ctx, fileKey)
+	attrs, err := s.bucket.Attributes(s.ctx, fileKey)
+
+	if gcerrors.Code(err) == gcerrors.NotFound {
+		err = ErrNotFound
+	}
+
+	return attrs, err
+}
+
+// GetFile returns a file content reader for the given fileKey.
+//
+// NB! Make sure to call Close() on the file after you are done working with it.
+//
+// If the file doesn't exist returns ErrNotFound.
+func (s *System) GetFile(fileKey string) (*blob.Reader, error) {
+	br, err := s.bucket.NewReader(s.ctx, fileKey, nil)
+
+	if gcerrors.Code(err) == gcerrors.NotFound {
+		err = ErrNotFound
+	}
+
+	return br, err
+}
+
+// Copy copies the file stored at srcKey to dstKey.
+//
+// If srcKey file doesn't exist, it returns ErrNotFound.
+//
+// If dstKey file already exists, it is overwritten.
+func (s *System) Copy(srcKey, dstKey string) error {
+	err := s.bucket.Copy(s.ctx, dstKey, srcKey, nil)
+
+	if gcerrors.Code(err) == gcerrors.NotFound {
+		err = ErrNotFound
+	}
+
+	return err
+}
+
+// List returns a flat list with info for all files under the specified prefix.
+func (s *System) List(prefix string) ([]*blob.ListObject, error) {
+	files := []*blob.ListObject{}
+
+	iter := s.bucket.List(&blob.ListOptions{
+		Prefix: prefix,
+	})
+
+	for {
+		obj, err := iter.Next(s.ctx)
+		if err != nil {
+			if err != io.EOF {
+				return nil, err
+			}
+			break
+		}
+		files = append(files, obj)
+	}
+
+	return files, nil
 }
 
 // Upload writes content into the fileKey location.
@@ -110,14 +229,13 @@ func (s *System) Upload(content []byte, fileKey string) error {
 	}
 
 	if _, err := w.Write(content); err != nil {
-		w.Close()
-		return err
+		return errors.Join(err, w.Close())
 	}
 
 	return w.Close()
 }
 
-// UploadFile uploads the provided multipart file to the fileKey location.
+// UploadFile uploads the provided File to the fileKey location.
 func (s *System) UploadFile(file *File, fileKey string) error {
 	f, err := file.Reader.Open()
 	if err != nil {
@@ -202,21 +320,38 @@ func (s *System) UploadMultipart(fh *multipart.FileHeader, fileKey string) error
 }
 
 // Delete deletes stored file at fileKey location.
+//
+// If the file doesn't exist returns ErrNotFound.
 func (s *System) Delete(fileKey string) error {
-	return s.bucket.Delete(s.ctx, fileKey)
+	err := s.bucket.Delete(s.ctx, fileKey)
+
+	if gcerrors.Code(err) == gcerrors.NotFound {
+		return ErrNotFound
+	}
+
+	return err
 }
 
 // DeletePrefix deletes everything starting with the specified prefix.
+//
+// The prefix could be subpath (ex. "/a/b/") or filename prefix (ex. "/a/b/file_").
 func (s *System) DeletePrefix(prefix string) []error {
 	failed := []error{}
 
 	if prefix == "" {
-		failed = append(failed, errors.New("Prefix mustn't be empty."))
+		failed = append(failed, errors.New("prefix mustn't be empty"))
 		return failed
 	}
 
 	dirsMap := map[string]struct{}{}
-	dirsMap[prefix] = struct{}{}
+
+	var isPrefixDir bool
+
+	// treat the prefix as directory only if it ends with trailing slash
+	if strings.HasSuffix(prefix, "/") {
+		isPrefixDir = true
+		dirsMap[strings.TrimRight(prefix, "/")] = struct{}{}
+	}
 
 	// delete all files with the prefix
 	// ---
@@ -225,19 +360,20 @@ func (s *System) DeletePrefix(prefix string) []error {
 	})
 	for {
 		obj, err := iter.Next(s.ctx)
-		if err == io.EOF {
-			break
-		}
-
 		if err != nil {
-			failed = append(failed, err)
-			continue
+			if err != io.EOF {
+				failed = append(failed, err)
+			}
+			break
 		}
 
 		if err := s.Delete(obj.Key); err != nil {
 			failed = append(failed, err)
-		} else {
-			dirsMap[filepath.Dir(obj.Key)] = struct{}{}
+		} else if isPrefixDir {
+			slashIdx := strings.LastIndex(obj.Key, "/")
+			if slashIdx > -1 {
+				dirsMap[obj.Key[:slashIdx]] = struct{}{}
+			}
 		}
 	}
 	// ---
@@ -267,6 +403,26 @@ func (s *System) DeletePrefix(prefix string) []error {
 	return failed
 }
 
+// Checks if the provided dir prefix doesn't have any files.
+//
+// A trailing slash will be appended to a non-empty dir string argument
+// to ensure that the checked prefix is a "directory".
+//
+// Returns "false" in case the has at least one file, otherwise - "true".
+func (s *System) IsEmptyDir(dir string) bool {
+	if dir != "" && !strings.HasSuffix(dir, "/") {
+		dir += "/"
+	}
+
+	iter := s.bucket.List(&blob.ListOptions{
+		Prefix: dir,
+	})
+
+	_, err := iter.Next(s.ctx)
+
+	return err == io.EOF
+}
+
 var inlineServeContentTypes = []string{
 	// image
 	"image/png", "image/jpg", "image/jpeg", "image/gif", "image/webp", "image/x-icon", "image/bmp",
@@ -285,56 +441,61 @@ var manualExtensionContentTypes = map[string]string{
 	".css": "text/css",      // (see https://github.com/gabriel-vasile/mimetype/pull/113)
 }
 
+// forceAttachmentParam is the name of the request query parameter to
+// force "Content-Disposition: attachment" header.
+const forceAttachmentParam = "download"
+
 // Serve serves the file at fileKey location to an HTTP response.
+//
+// If the `download` query parameter is used the file will be always served for
+// download no matter of its type (aka. with "Content-Disposition: attachment").
+//
+// Internally this method uses [http.ServeContent] so Range requests,
+// If-Match, If-Unmodified-Since, etc. headers are handled transparently.
 func (s *System) Serve(res http.ResponseWriter, req *http.Request, fileKey string, name string) error {
-	br, readErr := s.bucket.NewReader(s.ctx, fileKey, nil)
+	br, readErr := s.GetFile(fileKey)
 	if readErr != nil {
 		return readErr
 	}
 	defer br.Close()
 
+	var forceAttachment bool
+	if raw := req.URL.Query().Get(forceAttachmentParam); raw != "" {
+		forceAttachment, _ = strconv.ParseBool(raw)
+	}
+
 	disposition := "attachment"
 	realContentType := br.ContentType()
-	if list.ExistInSlice(realContentType, inlineServeContentTypes) {
+	if !forceAttachment && list.ExistInSlice(realContentType, inlineServeContentTypes) {
 		disposition = "inline"
 	}
 
 	// make an exception for specific content types and force a custom
-	// content type to send in the response so that it can be loaded directly
+	// content type to send in the response so that it can be loaded properly
 	extContentType := realContentType
 	if ct, found := manualExtensionContentTypes[filepath.Ext(name)]; found && extContentType != ct {
 		extContentType = ct
 	}
 
-	// clickjacking shouldn't be a concern when serving uploaded files,
-	// so it safe to unset the global X-Frame-Options to allow files embedding
-	// (see https://github.com/pocketbase/pocketbase/issues/677)
-	res.Header().Del("X-Frame-Options")
-
-	res.Header().Set("Content-Disposition", disposition+"; filename="+name)
-	res.Header().Set("Content-Type", extContentType)
-	res.Header().Set("Content-Length", strconv.FormatInt(br.Size(), 10))
-	res.Header().Set("Content-Security-Policy", "default-src 'none'; media-src 'self'; style-src 'unsafe-inline'; sandbox")
-
-	// all HTTP date/time stamps MUST be represented in Greenwich Mean Time (GMT)
-	// (see https://www.w3.org/Protocols/rfc2616/rfc2616-sec3.html#sec3.3.1)
-	//
-	// NB! time.LoadLocation may fail on non-Unix systems (see https://github.com/pocketbase/pocketbase/issues/45)
-	location, locationErr := time.LoadLocation("GMT")
-	if locationErr == nil {
-		res.Header().Set("Last-Modified", br.ModTime().In(location).Format("Mon, 02 Jan 06 15:04:05 MST"))
-	}
+	setHeaderIfMissing(res, "Content-Disposition", disposition+"; filename="+name)
+	setHeaderIfMissing(res, "Content-Type", extContentType)
+	setHeaderIfMissing(res, "Content-Security-Policy", "default-src 'none'; media-src 'self'; style-src 'unsafe-inline'; sandbox")
 
 	// set a default cache-control header
 	// (valid for 30 days but the cache is allowed to reuse the file for any requests
 	// that are made in the last day while revalidating the res in the background)
-	if res.Header().Get("Cache-Control") == "" {
-		res.Header().Set("Cache-Control", "max-age=2592000, stale-while-revalidate=86400")
-	}
+	setHeaderIfMissing(res, "Cache-Control", "max-age=2592000, stale-while-revalidate=86400")
 
 	http.ServeContent(res, req, name, br.ModTime(), br)
 
 	return nil
+}
+
+// note: expects key to be in a canonical form (eg. "accept-encoding" should be "Accept-Encoding").
+func setHeaderIfMissing(res http.ResponseWriter, key string, value string) {
+	if _, ok := res.Header()[key]; !ok {
+		res.Header().Set(key, value)
+	}
 }
 
 var ThumbSizeRegex = regexp.MustCompile(`^(\d+)x(\d+)(t|b|f)?$`)
@@ -352,7 +513,7 @@ var ThumbSizeRegex = regexp.MustCompile(`^(\d+)x(\d+)(t|b|f)?$`)
 func (s *System) CreateThumb(originalKey string, thumbKey, thumbSize string) error {
 	sizeParts := ThumbSizeRegex.FindStringSubmatch(thumbSize)
 	if len(sizeParts) != 4 {
-		return errors.New("Thumb size must be in WxH, WxHt, WxHb or WxHf format.")
+		return errors.New("thumb size must be in WxH, WxHt, WxHb or WxHf format")
 	}
 
 	width, _ := strconv.Atoi(sizeParts[1])
@@ -360,11 +521,11 @@ func (s *System) CreateThumb(originalKey string, thumbKey, thumbSize string) err
 	resizeType := sizeParts[3]
 
 	if width == 0 && height == 0 {
-		return errors.New("Thumb width and height cannot be zero at the same time.")
+		return errors.New("thumb width and height cannot be zero at the same time")
 	}
 
 	// fetch the original
-	r, readErr := s.bucket.NewReader(s.ctx, originalKey, nil)
+	r, readErr := s.GetFile(originalKey)
 	if readErr != nil {
 		return readErr
 	}
@@ -381,26 +542,30 @@ func (s *System) CreateThumb(originalKey string, thumbKey, thumbSize string) err
 
 	if width == 0 || height == 0 {
 		// force resize preserving aspect ratio
-		thumbImg = imaging.Resize(img, width, height, imaging.CatmullRom)
+		thumbImg = imaging.Resize(img, width, height, imaging.Linear)
 	} else {
 		switch resizeType {
 		case "f":
 			// fit
-			thumbImg = imaging.Fit(img, width, height, imaging.CatmullRom)
+			thumbImg = imaging.Fit(img, width, height, imaging.Linear)
 		case "t":
 			// fill and crop from top
-			thumbImg = imaging.Fill(img, width, height, imaging.Top, imaging.CatmullRom)
+			thumbImg = imaging.Fill(img, width, height, imaging.Top, imaging.Linear)
 		case "b":
 			// fill and crop from bottom
-			thumbImg = imaging.Fill(img, width, height, imaging.Bottom, imaging.CatmullRom)
+			thumbImg = imaging.Fill(img, width, height, imaging.Bottom, imaging.Linear)
 		default:
 			// fill and crop from center
-			thumbImg = imaging.Fill(img, width, height, imaging.Center, imaging.CatmullRom)
+			thumbImg = imaging.Fill(img, width, height, imaging.Center, imaging.Linear)
 		}
 	}
 
+	opts := &blob.WriterOptions{
+		ContentType: r.ContentType(),
+	}
+
 	// open a thumb storage writer (aka. prepare for upload)
-	w, writerErr := s.bucket.NewWriter(s.ctx, thumbKey, nil)
+	w, writerErr := s.bucket.NewWriter(s.ctx, thumbKey, opts)
 	if writerErr != nil {
 		return writerErr
 	}

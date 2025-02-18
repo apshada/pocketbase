@@ -1,16 +1,16 @@
 <script>
-    import { Collection } from "pocketbase";
+    import CodeBlock from "@/components/base/CodeBlock.svelte";
+    import FieldsQueryParam from "@/components/collections/docs/FieldsQueryParam.svelte";
+    import SdkTabs from "@/components/base/SdkTabs.svelte";
     import ApiClient from "@/utils/ApiClient";
     import CommonHelper from "@/utils/CommonHelper";
-    import CodeBlock from "@/components/base/CodeBlock.svelte";
-    import SdkTabs from "@/components/collections/docs/SdkTabs.svelte";
 
-    export let collection = new Collection();
+    export let collection;
 
     let responseTab = 200;
     let responses = [];
 
-    $: backendAbsUrl = CommonHelper.getApiExampleUrl(ApiClient.baseUrl);
+    $: backendAbsUrl = CommonHelper.getApiExampleUrl(ApiClient.baseURL);
 
     $: responses = [
         {
@@ -21,14 +21,14 @@
                     record: CommonHelper.dummyCollectionRecord(collection),
                 },
                 null,
-                2
+                2,
             ),
         },
         {
             code: 401,
             body: `
                 {
-                  "code": 401,
+                  "status": 401,
                   "message": "The request requires valid record authorization token to be set.",
                   "data": {}
                 }
@@ -38,7 +38,7 @@
             code: 403,
             body: `
                 {
-                  "code": 403,
+                  "status": 403,
                   "message": "The authorized record model is not allowed to perform this action.",
                   "data": {}
                 }
@@ -48,7 +48,7 @@
             code: 404,
             body: `
                 {
-                  "code": 404,
+                  "status": 404,
                   "message": "Missing auth record context.",
                   "data": {}
                 }
@@ -64,10 +64,8 @@
         <strong>already authenticated record</strong>.
     </p>
     <p>
-        <em>
-            This method is usually called by users on page/screen reload to ensure that the previously stored
-            data in <code>pb.authStore</code> is still valid and up-to-date.
-        </em>
+        This method is usually called by users on page/screen reload to ensure that the previously stored data
+        in <code>pb.authStore</code> is still valid and up-to-date.
     </p>
 </div>
 
@@ -84,7 +82,7 @@
         // after the above you can also access the refreshed auth data from the authStore
         console.log(pb.authStore.isValid);
         console.log(pb.authStore.token);
-        console.log(pb.authStore.model.id);
+        console.log(pb.authStore.record.id);
     `}
     dart={`
         import 'package:pocketbase/pocketbase.dart';
@@ -98,7 +96,7 @@
         // after the above you can also access the refreshed auth data from the authStore
         print(pb.authStore.isValid);
         print(pb.authStore.token);
-        print(pb.authStore.model.id);
+        print(pb.authStore.record.id);
     `}
 />
 
@@ -110,7 +108,7 @@
             /api/collections/<strong>{collection.name}</strong>/auth-refresh
         </p>
     </div>
-    <p class="txt-hint txt-sm txt-right">Requires record <code>Authorization:TOKEN</code> header</p>
+    <p class="txt-hint txt-sm txt-right">Requires <code>Authorization:TOKEN</code> header</p>
 </div>
 
 <div class="section-title">Query parameters</div>
@@ -138,12 +136,13 @@
                 Only the relations to which the request user has permissions to <strong>view</strong> will be expanded.
             </td>
         </tr>
+        <FieldsQueryParam prefix="record." />
     </tbody>
 </table>
 
 <div class="section-title">Responses</div>
 <div class="tabs">
-    <div class="tabs-header compact left">
+    <div class="tabs-header compact combined left">
         {#each responses as response (response.code)}
             <button
                 class="tab-item"

@@ -2,6 +2,7 @@ package filesystem_test
 
 import (
 	"bytes"
+	"errors"
 	"image"
 	"image/png"
 	"mime/multipart"
@@ -19,11 +20,11 @@ func TestFileSystemExists(t *testing.T) {
 	dir := createTestDir(t)
 	defer os.RemoveAll(dir)
 
-	fs, err := filesystem.NewLocal(dir)
+	fsys, err := filesystem.NewLocal(dir)
 	if err != nil {
 		t.Fatal(err)
 	}
-	defer fs.Close()
+	defer fsys.Close()
 
 	scenarios := []struct {
 		file   string
@@ -35,12 +36,18 @@ func TestFileSystemExists(t *testing.T) {
 		{"image.png", true},
 	}
 
-	for i, scenario := range scenarios {
-		exists, _ := fs.Exists(scenario.file)
+	for _, s := range scenarios {
+		t.Run(s.file, func(t *testing.T) {
+			exists, err := fsys.Exists(s.file)
 
-		if exists != scenario.exists {
-			t.Errorf("(%d) Expected %v, got %v", i, scenario.exists, exists)
-		}
+			if err != nil {
+				t.Fatal(err)
+			}
+
+			if exists != s.exists {
+				t.Fatalf("Expected exists %v, got %v", s.exists, exists)
+			}
+		})
 	}
 }
 
@@ -48,11 +55,11 @@ func TestFileSystemAttributes(t *testing.T) {
 	dir := createTestDir(t)
 	defer os.RemoveAll(dir)
 
-	fs, err := filesystem.NewLocal(dir)
+	fsys, err := filesystem.NewLocal(dir)
 	if err != nil {
 		t.Fatal(err)
 	}
-	defer fs.Close()
+	defer fsys.Close()
 
 	scenarios := []struct {
 		file              string
@@ -65,20 +72,24 @@ func TestFileSystemAttributes(t *testing.T) {
 		{"image.png", false, "image/png"},
 	}
 
-	for i, scenario := range scenarios {
-		attr, err := fs.Attributes(scenario.file)
+	for _, s := range scenarios {
+		t.Run(s.file, func(t *testing.T) {
+			attr, err := fsys.Attributes(s.file)
 
-		if err == nil && scenario.expectError {
-			t.Errorf("(%d) Expected error, got nil", i)
-		}
+			hasErr := err != nil
 
-		if err != nil && !scenario.expectError {
-			t.Errorf("(%d) Expected nil, got error, %v", i, err)
-		}
+			if hasErr != s.expectError {
+				t.Fatalf("Expected hasErr %v, got %v", s.expectError, hasErr)
+			}
 
-		if err == nil && attr.ContentType != scenario.expectContentType {
-			t.Errorf("(%d) Expected attr.ContentType to be %q, got %q", i, scenario.expectContentType, attr.ContentType)
-		}
+			if hasErr && !errors.Is(err, filesystem.ErrNotFound) {
+				t.Fatalf("Expected ErrNotFound err, got %q", err)
+			}
+
+			if !hasErr && attr.ContentType != s.expectContentType {
+				t.Fatalf("Expected attr.ContentType to be %q, got %q", s.expectContentType, attr.ContentType)
+			}
+		})
 	}
 }
 
@@ -86,49 +97,121 @@ func TestFileSystemDelete(t *testing.T) {
 	dir := createTestDir(t)
 	defer os.RemoveAll(dir)
 
-	fs, err := filesystem.NewLocal(dir)
+	fsys, err := filesystem.NewLocal(dir)
 	if err != nil {
 		t.Fatal(err)
 	}
-	defer fs.Close()
+	defer fsys.Close()
 
-	if err := fs.Delete("missing.txt"); err == nil {
-		t.Fatal("Expected error, got nil")
+	if err := fsys.Delete("missing.txt"); err == nil || !errors.Is(err, filesystem.ErrNotFound) {
+		t.Fatalf("Expected ErrNotFound error, got %v", err)
 	}
 
-	if err := fs.Delete("image.png"); err != nil {
+	if err := fsys.Delete("image.png"); err != nil {
 		t.Fatalf("Expected nil, got error %v", err)
 	}
 }
 
-func TestFileSystemDeletePrefix(t *testing.T) {
+func TestFileSystemDeletePrefixWithoutTrailingSlash(t *testing.T) {
 	dir := createTestDir(t)
 	defer os.RemoveAll(dir)
 
-	fs, err := filesystem.NewLocal(dir)
+	fsys, err := filesystem.NewLocal(dir)
 	if err != nil {
 		t.Fatal(err)
 	}
-	defer fs.Close()
+	defer fsys.Close()
 
-	if errs := fs.DeletePrefix(""); len(errs) == 0 {
+	if errs := fsys.DeletePrefix(""); len(errs) == 0 {
 		t.Fatal("Expected error, got nil", errs)
 	}
 
-	if errs := fs.DeletePrefix("missing/"); len(errs) != 0 {
+	if errs := fsys.DeletePrefix("missing"); len(errs) != 0 {
 		t.Fatalf("Not existing prefix shouldn't error, got %v", errs)
 	}
 
-	if errs := fs.DeletePrefix("test"); len(errs) != 0 {
+	if errs := fsys.DeletePrefix("test"); len(errs) != 0 {
 		t.Fatalf("Expected nil, got errors %v", errs)
 	}
 
-	// ensure that the test/ files are deleted
-	if exists, _ := fs.Exists("test/sub1.txt"); exists {
+	// ensure that the test/* files are deleted
+	if exists, _ := fsys.Exists("test/sub1.txt"); exists {
 		t.Fatalf("Expected test/sub1.txt to be deleted")
 	}
-	if exists, _ := fs.Exists("test/sub2.txt"); exists {
+	if exists, _ := fsys.Exists("test/sub2.txt"); exists {
 		t.Fatalf("Expected test/sub2.txt to be deleted")
+	}
+
+	// the test directory should remain since the prefix didn't have trailing slash
+	if _, err := os.Stat(filepath.Join(dir, "test")); os.IsNotExist(err) {
+		t.Fatal("Expected the prefix dir to remain")
+	}
+}
+
+func TestFileSystemDeletePrefixWithTrailingSlash(t *testing.T) {
+	dir := createTestDir(t)
+	defer os.RemoveAll(dir)
+
+	fsys, err := filesystem.NewLocal(dir)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer fsys.Close()
+
+	if errs := fsys.DeletePrefix("missing/"); len(errs) != 0 {
+		t.Fatalf("Not existing prefix shouldn't error, got %v", errs)
+	}
+
+	if errs := fsys.DeletePrefix("test/"); len(errs) != 0 {
+		t.Fatalf("Expected nil, got errors %v", errs)
+	}
+
+	// ensure that the test/* files are deleted
+	if exists, _ := fsys.Exists("test/sub1.txt"); exists {
+		t.Fatalf("Expected test/sub1.txt to be deleted")
+	}
+	if exists, _ := fsys.Exists("test/sub2.txt"); exists {
+		t.Fatalf("Expected test/sub2.txt to be deleted")
+	}
+
+	// the test directory should be also deleted since the prefix has trailing slash
+	if _, err := os.Stat(filepath.Join(dir, "test")); !os.IsNotExist(err) {
+		t.Fatal("Expected the prefix dir to be deleted")
+	}
+}
+
+func TestFileSystemIsEmptyDir(t *testing.T) {
+	dir := createTestDir(t)
+	defer os.RemoveAll(dir)
+
+	fsys, err := filesystem.NewLocal(dir)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer fsys.Close()
+
+	scenarios := []struct {
+		dir      string
+		expected bool
+	}{
+		{"", false}, // special case that shouldn't be suffixed with delimiter to search for any files within the bucket
+		{"/", true},
+		{"missing", true},
+		{"missing/", true},
+		{"test", false},
+		{"test/", false},
+		{"empty", true},
+		{"empty/", true},
+	}
+
+	for _, s := range scenarios {
+		t.Run(s.dir, func(t *testing.T) {
+			result := fsys.IsEmptyDir(s.dir)
+
+			if result != s.expected {
+				t.Fatalf("Expected %v, got %v", s.expected, result)
+			}
+		})
 	}
 }
 
@@ -156,24 +239,24 @@ func TestFileSystemUploadMultipart(t *testing.T) {
 	defer file.Close()
 	// ---
 
-	fs, err := filesystem.NewLocal(dir)
+	fsys, err := filesystem.NewLocal(dir)
 	if err != nil {
 		t.Fatal(err)
 	}
-	defer fs.Close()
+	defer fsys.Close()
 
 	fileKey := "newdir/newkey.txt"
 
-	uploadErr := fs.UploadMultipart(fh, fileKey)
+	uploadErr := fsys.UploadMultipart(fh, fileKey)
 	if uploadErr != nil {
 		t.Fatal(uploadErr)
 	}
 
-	if exists, _ := fs.Exists(fileKey); !exists {
+	if exists, _ := fsys.Exists(fileKey); !exists {
 		t.Fatalf("Expected %q to exist", fileKey)
 	}
 
-	attrs, err := fs.Attributes(fileKey)
+	attrs, err := fsys.Attributes(fileKey)
 	if err != nil {
 		t.Fatalf("Failed to fetch file attributes: %v", err)
 	}
@@ -186,11 +269,11 @@ func TestFileSystemUploadFile(t *testing.T) {
 	dir := createTestDir(t)
 	defer os.RemoveAll(dir)
 
-	fs, err := filesystem.NewLocal(dir)
+	fsys, err := filesystem.NewLocal(dir)
 	if err != nil {
 		t.Fatal(err)
 	}
-	defer fs.Close()
+	defer fsys.Close()
 
 	fileKey := "newdir/newkey.txt"
 
@@ -201,16 +284,16 @@ func TestFileSystemUploadFile(t *testing.T) {
 
 	file.OriginalName = "test.txt"
 
-	uploadErr := fs.UploadFile(file, fileKey)
+	uploadErr := fsys.UploadFile(file, fileKey)
 	if uploadErr != nil {
 		t.Fatal(uploadErr)
 	}
 
-	if exists, _ := fs.Exists(fileKey); !exists {
+	if exists, _ := fsys.Exists(fileKey); !exists {
 		t.Fatalf("Expected %q to exist", fileKey)
 	}
 
-	attrs, err := fs.Attributes(fileKey)
+	attrs, err := fsys.Attributes(fileKey)
 	if err != nil {
 		t.Fatalf("Failed to fetch file attributes: %v", err)
 	}
@@ -223,20 +306,20 @@ func TestFileSystemUpload(t *testing.T) {
 	dir := createTestDir(t)
 	defer os.RemoveAll(dir)
 
-	fs, err := filesystem.NewLocal(dir)
+	fsys, err := filesystem.NewLocal(dir)
 	if err != nil {
 		t.Fatal(err)
 	}
-	defer fs.Close()
+	defer fsys.Close()
 
 	fileKey := "newdir/newkey.txt"
 
-	uploadErr := fs.Upload([]byte("demo"), fileKey)
+	uploadErr := fsys.Upload([]byte("demo"), fileKey)
 	if uploadErr != nil {
 		t.Fatal(uploadErr)
 	}
 
-	if exists, _ := fs.Exists(fileKey); !exists {
+	if exists, _ := fsys.Exists(fileKey); !exists {
 		t.Fatalf("Expected %s to exist", fileKey)
 	}
 }
@@ -245,15 +328,20 @@ func TestFileSystemServe(t *testing.T) {
 	dir := createTestDir(t)
 	defer os.RemoveAll(dir)
 
-	fs, err := filesystem.NewLocal(dir)
+	fsys, err := filesystem.NewLocal(dir)
 	if err != nil {
 		t.Fatal(err)
 	}
-	defer fs.Close()
+	defer fsys.Close()
+
+	csp := "default-src 'none'; media-src 'self'; style-src 'unsafe-inline'; sandbox"
+	cacheControl := "max-age=2592000, stale-while-revalidate=86400"
 
 	scenarios := []struct {
 		path          string
 		name          string
+		query         map[string]string
+		headers       map[string]string
 		expectError   bool
 		expectHeaders map[string]string
 	}{
@@ -261,6 +349,8 @@ func TestFileSystemServe(t *testing.T) {
 			// missing
 			"missing.txt",
 			"test_name.txt",
+			nil,
+			nil,
 			true,
 			nil,
 		},
@@ -268,83 +358,270 @@ func TestFileSystemServe(t *testing.T) {
 			// existing regular file
 			"test/sub1.txt",
 			"test_name.txt",
+			nil,
+			nil,
 			false,
 			map[string]string{
 				"Content-Disposition":     "attachment; filename=test_name.txt",
 				"Content-Type":            "application/octet-stream",
 				"Content-Length":          "0",
-				"Content-Security-Policy": "default-src 'none'; media-src 'self'; style-src 'unsafe-inline'; sandbox",
+				"Content-Security-Policy": csp,
+				"Cache-Control":           cacheControl,
 			},
 		},
 		{
 			// png inline
 			"image.png",
 			"test_name.png",
+			nil,
+			nil,
 			false,
 			map[string]string{
 				"Content-Disposition":     "inline; filename=test_name.png",
 				"Content-Type":            "image/png",
 				"Content-Length":          "73",
-				"Content-Security-Policy": "default-src 'none'; media-src 'self'; style-src 'unsafe-inline'; sandbox",
+				"Content-Security-Policy": csp,
+				"Cache-Control":           cacheControl,
+			},
+		},
+		{
+			// png with forced attachment
+			"image.png",
+			"test_name_download.png",
+			map[string]string{"download": "1"},
+			nil,
+			false,
+			map[string]string{
+				"Content-Disposition":     "attachment; filename=test_name_download.png",
+				"Content-Type":            "image/png",
+				"Content-Length":          "73",
+				"Content-Security-Policy": csp,
+				"Cache-Control":           cacheControl,
 			},
 		},
 		{
 			// svg exception
 			"image.svg",
 			"test_name.svg",
+			nil,
+			nil,
 			false,
 			map[string]string{
 				"Content-Disposition":     "attachment; filename=test_name.svg",
 				"Content-Type":            "image/svg+xml",
 				"Content-Length":          "0",
-				"Content-Security-Policy": "default-src 'none'; media-src 'self'; style-src 'unsafe-inline'; sandbox",
+				"Content-Security-Policy": csp,
+				"Cache-Control":           cacheControl,
 			},
 		},
 		{
 			// css exception
 			"style.css",
 			"test_name.css",
+			nil,
+			nil,
 			false,
 			map[string]string{
 				"Content-Disposition":     "attachment; filename=test_name.css",
 				"Content-Type":            "text/css",
 				"Content-Length":          "0",
-				"Content-Security-Policy": "default-src 'none'; media-src 'self'; style-src 'unsafe-inline'; sandbox",
+				"Content-Security-Policy": csp,
+				"Cache-Control":           cacheControl,
+			},
+		},
+		{
+			// custom header
+			"test/sub2.txt",
+			"test_name.txt",
+			nil,
+			map[string]string{
+				"Content-Disposition":     "1",
+				"Content-Type":            "2",
+				"Content-Length":          "3",
+				"Content-Security-Policy": "4",
+				"Cache-Control":           "5",
+				"X-Custom":                "6",
+			},
+			false,
+			map[string]string{
+				"Content-Disposition":     "1",
+				"Content-Type":            "2",
+				"Content-Length":          "0", // overwriten by http.ServeContent
+				"Content-Security-Policy": "4",
+				"Cache-Control":           "5",
+				"X-Custom":                "6",
 			},
 		},
 	}
 
-	for _, scenario := range scenarios {
-		res := httptest.NewRecorder()
-		req := httptest.NewRequest("GET", "/", nil)
+	for _, s := range scenarios {
+		t.Run(s.path, func(t *testing.T) {
+			res := httptest.NewRecorder()
+			req := httptest.NewRequest("GET", "/", nil)
 
-		err := fs.Serve(res, req, scenario.path, scenario.name)
-		hasErr := err != nil
-
-		if hasErr != scenario.expectError {
-			t.Errorf("(%s) Expected hasError %v, got %v (%v)", scenario.path, scenario.expectError, hasErr, err)
-			continue
-		}
-
-		if scenario.expectError {
-			continue
-		}
-
-		result := res.Result()
-
-		for hName, hValue := range scenario.expectHeaders {
-			v := result.Header.Get(hName)
-			if v != hValue {
-				t.Errorf("(%s) Expected value %q for header %q, got %q", scenario.path, hValue, hName, v)
+			query := req.URL.Query()
+			for k, v := range s.query {
+				query.Set(k, v)
 			}
+			req.URL.RawQuery = query.Encode()
+
+			for k, v := range s.headers {
+				res.Header().Set(k, v)
+			}
+
+			err := fsys.Serve(res, req, s.path, s.name)
+			hasErr := err != nil
+
+			if hasErr != s.expectError {
+				t.Fatalf("Expected hasError %v, got %v (%v)", s.expectError, hasErr, err)
+			}
+
+			if s.expectError {
+				return
+			}
+
+			result := res.Result()
+			defer result.Body.Close()
+
+			for hName, hValue := range s.expectHeaders {
+				v := result.Header.Get(hName)
+				if v != hValue {
+					t.Errorf("Expected value %q for header %q, got %q", hValue, hName, v)
+				}
+			}
+		})
+	}
+}
+
+func TestFileSystemGetFile(t *testing.T) {
+	dir := createTestDir(t)
+	defer os.RemoveAll(dir)
+
+	fsys, err := filesystem.NewLocal(dir)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer fsys.Close()
+
+	scenarios := []struct {
+		file        string
+		expectError bool
+	}{
+		{"missing.png", true},
+		{"image.png", false},
+	}
+
+	for _, s := range scenarios {
+		t.Run(s.file, func(t *testing.T) {
+			f, err := fsys.GetFile(s.file)
+
+			hasErr := err != nil
+
+			if !hasErr {
+				defer f.Close()
+			}
+
+			if hasErr != s.expectError {
+				t.Fatalf("Expected hasErr %v, got %v", s.expectError, hasErr)
+			}
+
+			if hasErr && !errors.Is(err, filesystem.ErrNotFound) {
+				t.Fatalf("Expected ErrNotFound error, got %v", err)
+			}
+		})
+	}
+}
+
+func TestFileSystemCopy(t *testing.T) {
+	dir := createTestDir(t)
+	defer os.RemoveAll(dir)
+
+	fsys, err := filesystem.NewLocal(dir)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer fsys.Close()
+
+	src := "image.png"
+	dst := "image.png_copy"
+
+	// copy missing file
+	if err := fsys.Copy(dst, src); err == nil {
+		t.Fatalf("Expected to fail copying %q to %q, got nil", dst, src)
+	}
+
+	// copy existing file
+	if err := fsys.Copy(src, dst); err != nil {
+		t.Fatalf("Failed to copy %q to %q: %v", src, dst, err)
+	}
+	f, err := fsys.GetFile(dst)
+	//nolint
+	defer f.Close()
+	if err != nil {
+		t.Fatalf("Missing copied file %q: %v", dst, err)
+	}
+	if f.Size() != 73 {
+		t.Fatalf("Expected file size %d, got %d", 73, f.Size())
+	}
+}
+
+func TestFileSystemList(t *testing.T) {
+	dir := createTestDir(t)
+	defer os.RemoveAll(dir)
+
+	fsys, err := filesystem.NewLocal(dir)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer fsys.Close()
+
+	scenarios := []struct {
+		prefix   string
+		expected []string
+	}{
+		{
+			"",
+			[]string{
+				"image.png",
+				"image.svg",
+				"image_! noext",
+				"style.css",
+				"test/sub1.txt",
+				"test/sub2.txt",
+			},
+		},
+		{
+			"test",
+			[]string{
+				"test/sub1.txt",
+				"test/sub2.txt",
+			},
+		},
+		{
+			"missing",
+			[]string{},
+		},
+	}
+
+	for _, s := range scenarios {
+		objs, err := fsys.List(s.prefix)
+		if err != nil {
+			t.Fatalf("[%s] %v", s.prefix, err)
 		}
 
-		if v := result.Header.Get("X-Frame-Options"); v != "" {
-			t.Errorf("(%s) Expected the X-Frame-Options header to be unset, got %v", scenario.path, v)
+		if len(s.expected) != len(objs) {
+			t.Fatalf("[%s] Expected %d files, got \n%v", s.prefix, len(s.expected), objs)
 		}
 
-		if v := result.Header.Get("Cache-Control"); v == "" {
-			t.Errorf("(%s) Expected Cache-Control header to be set, got empty string", scenario.path)
+	ObjsLoop:
+		for _, obj := range objs {
+			for _, name := range s.expected {
+				if name == obj.Key {
+					continue ObjsLoop
+				}
+			}
+
+			t.Fatalf("[%s] Unexpected file %q", s.prefix, obj.Key)
 		}
 	}
 }
@@ -353,17 +630,17 @@ func TestFileSystemServeSingleRange(t *testing.T) {
 	dir := createTestDir(t)
 	defer os.RemoveAll(dir)
 
-	fs, err := filesystem.NewLocal(dir)
+	fsys, err := filesystem.NewLocal(dir)
 	if err != nil {
 		t.Fatal(err)
 	}
-	defer fs.Close()
+	defer fsys.Close()
 
 	res := httptest.NewRecorder()
 	req := httptest.NewRequest("GET", "/", nil)
 	req.Header.Add("Range", "bytes=0-20")
 
-	if err := fs.Serve(res, req, "image.png", "image.png"); err != nil {
+	if err := fsys.Serve(res, req, "image.png", "image.png"); err != nil {
 		t.Fatal(err)
 	}
 
@@ -387,17 +664,17 @@ func TestFileSystemServeMultiRange(t *testing.T) {
 	dir := createTestDir(t)
 	defer os.RemoveAll(dir)
 
-	fs, err := filesystem.NewLocal(dir)
+	fsys, err := filesystem.NewLocal(dir)
 	if err != nil {
 		t.Fatal(err)
 	}
-	defer fs.Close()
+	defer fsys.Close()
 
 	res := httptest.NewRecorder()
 	req := httptest.NewRequest("GET", "/", nil)
 	req.Header.Add("Range", "bytes=0-20, 25-30")
 
-	if err := fs.Serve(res, req, "image.png", "image.png"); err != nil {
+	if err := fsys.Serve(res, req, "image.png", "image.png"); err != nil {
 		t.Fatal(err)
 	}
 
@@ -416,11 +693,11 @@ func TestFileSystemCreateThumb(t *testing.T) {
 	dir := createTestDir(t)
 	defer os.RemoveAll(dir)
 
-	fs, err := filesystem.NewLocal(dir)
+	fsys, err := filesystem.NewLocal(dir)
 	if err != nil {
 		t.Fatal(err)
 	}
-	defer fs.Close()
+	defer fsys.Close()
 
 	scenarios := []struct {
 		file        string
@@ -441,7 +718,7 @@ func TestFileSystemCreateThumb(t *testing.T) {
 	}
 
 	for i, scenario := range scenarios {
-		err := fs.CreateThumb(scenario.file, scenario.thumb, "100x100")
+		err := fsys.CreateThumb(scenario.file, scenario.thumb, "100x100")
 
 		hasErr := err != nil
 		if hasErr != scenario.expectError {
@@ -453,7 +730,7 @@ func TestFileSystemCreateThumb(t *testing.T) {
 			continue
 		}
 
-		if exists, _ := fs.Exists(scenario.thumb); !exists {
+		if exists, _ := fsys.Exists(scenario.thumb); !exists {
 			t.Errorf("(%d) Couldn't find %q thumb", i, scenario.thumb)
 		}
 	}
@@ -464,6 +741,10 @@ func TestFileSystemCreateThumb(t *testing.T) {
 func createTestDir(t *testing.T) string {
 	dir, err := os.MkdirTemp(os.TempDir(), "pb_test")
 	if err != nil {
+		t.Fatal(err)
+	}
+
+	if err := os.MkdirAll(filepath.Join(dir, "empty"), os.ModePerm); err != nil {
 		t.Fatal(err)
 	}
 

@@ -1,167 +1,226 @@
 <script>
-    import { SchemaField } from "pocketbase";
-    import FieldAccordion from "@/components/collections/FieldAccordion.svelte";
+    import Draggable from "@/components/base/Draggable.svelte";
+    import IndexesList from "@/components/collections/IndexesList.svelte";
+    import NewField from "@/components/collections/schema/NewField.svelte";
+    import SchemaFieldAutodate from "@/components/collections/schema/SchemaFieldAutodate.svelte";
+    import SchemaFieldBool from "@/components/collections/schema/SchemaFieldBool.svelte";
+    import SchemaFieldDate from "@/components/collections/schema/SchemaFieldDate.svelte";
+    import SchemaFieldEditor from "@/components/collections/schema/SchemaFieldEditor.svelte";
+    import SchemaFieldEmail from "@/components/collections/schema/SchemaFieldEmail.svelte";
+    import SchemaFieldFile from "@/components/collections/schema/SchemaFieldFile.svelte";
+    import SchemaFieldJson from "@/components/collections/schema/SchemaFieldJson.svelte";
+    import SchemaFieldNumber from "@/components/collections/schema/SchemaFieldNumber.svelte";
+    import SchemaFieldPassword from "@/components/collections/schema/SchemaFieldPassword.svelte";
+    import SchemaFieldRelation from "@/components/collections/schema/SchemaFieldRelation.svelte";
+    import SchemaFieldSelect from "@/components/collections/schema/SchemaFieldSelect.svelte";
+    import SchemaFieldText from "@/components/collections/schema/SchemaFieldText.svelte";
+    import SchemaFieldUrl from "@/components/collections/schema/SchemaFieldUrl.svelte";
+    import { scaffolds } from "@/stores/collections";
+    import { setErrors } from "@/stores/errors";
+    import CommonHelper from "@/utils/CommonHelper";
 
-    export let collection = {};
+    export let collection;
 
-    const baseReservedNames = [
-        "id",
-        "created",
-        "updated",
-        "collectionId",
-        "collectionName",
-        "expand",
-        "true",
-        "false",
-        "null",
-    ];
+    let oldCollectionType;
 
-    let reservedNames = [];
+    const fieldComponents = {
+        text: SchemaFieldText,
+        number: SchemaFieldNumber,
+        bool: SchemaFieldBool,
+        email: SchemaFieldEmail,
+        url: SchemaFieldUrl,
+        editor: SchemaFieldEditor,
+        date: SchemaFieldDate,
+        select: SchemaFieldSelect,
+        json: SchemaFieldJson,
+        file: SchemaFieldFile,
+        relation: SchemaFieldRelation,
+        password: SchemaFieldPassword,
+        autodate: SchemaFieldAutodate,
+    };
 
-    $: if (collection.isAuth) {
-        reservedNames = baseReservedNames.concat([
-            "username",
-            "email",
-            "emailVisibility",
-            "verified",
-            "tokenKey",
-            "passwordHash",
-            "lastResetSentAt",
-            "lastVerificationSentAt",
-            "password",
-            "passwordConfirm",
-            "oldPassword",
-        ]);
-    } else {
-        reservedNames = baseReservedNames.slice(0);
+    $: if (!collection.id && oldCollectionType != collection.type) {
+        oldCollectionType = collection.type;
+        onTypeCange();
     }
 
-    $: if (typeof collection?.schema === "undefined") {
-        collection = collection || {};
-        collection.schema = [];
+    $: if (typeof collection.fields === "undefined") {
+        collection.fields = [];
     }
+
+    $: nonDeletedFields = collection.fields.filter((f) => !f._toDelete);
 
     function removeField(fieldIndex) {
-        if (collection.schema[fieldIndex]) {
-            collection.schema.splice(fieldIndex, 1);
-            collection.schema = collection.schema;
+        if (collection.fields[fieldIndex]) {
+            collection.fields.splice(fieldIndex, 1);
+            collection.fields = collection.fields;
         }
     }
 
-    function newField() {
-        const field = new SchemaField({
+    function duplicateField(fieldIndex) {
+        const field = collection.fields[fieldIndex];
+        if (!field) {
+            return; // nothing to duplicate
+        }
+
+        field.onMountSelect = false;
+
+        const clone = structuredClone(field);
+        clone.id = "";
+        clone.system = false;
+        clone.name = getUniqueFieldName(clone.name + "_copy");
+        clone.onMountSelect = true;
+
+        collection.fields.splice(fieldIndex + 1, 0, clone);
+        collection.fields = collection.fields;
+    }
+
+    function newField(fieldType = "text") {
+        const field = CommonHelper.initSchemaField({
             name: getUniqueFieldName(),
+            type: fieldType,
         });
 
-        collection.schema.push(field);
-        collection.schema = collection.schema;
-    }
+        field.onMountSelect = true;
 
-    function getUniqueFieldName(base = "field") {
-        let counter = "";
-
-        while (hasFieldWithName(base + counter)) {
-            ++counter;
+        // if the collection has created/updated last fields,
+        // insert before the first autodate field, otherwise - append
+        const idx = collection.fields.findLastIndex((f) => f.type != "autodate");
+        if (field.type != "autodate" && idx >= 0) {
+            collection.fields.splice(idx + 1, 0, field);
+        } else {
+            collection.fields.push(field);
         }
 
-        return base + counter;
+        collection.fields = collection.fields;
     }
 
-    function hasFieldWithName(name) {
-        return !!collection.schema.find((field) => field.name === name);
-    }
+    function getUniqueFieldName(name = "field") {
+        let result = name;
+        let counter = 2;
 
-    function getSiblingsFieldNames(currentField) {
-        let result = [];
+        let suffix = name.match(/\d+$/)?.[0] || ""; // extract numeric suffix
 
-        if (currentField.toDelete) {
-            return result;
-        }
+        // name without the suffix
+        let base = suffix ? name.substring(0, name.length - suffix.length) : name;
 
-        for (let field of collection.schema) {
-            if (field === currentField || field.toDelete) {
-                continue; // skip current and deleted fields
-            }
-
-            result.push(field.name);
+        while (hasFieldWithName(result)) {
+            result = base + ((suffix << 0) + counter);
+            counter++;
         }
 
         return result;
     }
 
-    // ---------------------------------------------------------------
-    // fields drag&drop handling
-    // ---------------------------------------------------------------
-
-    function onFieldDrag(event, i) {
-        if (!event) {
-            return;
-        }
-
-        event.dataTransfer.effectAllowed = "move";
-        event.dataTransfer.dropEffect = "move";
-        event.dataTransfer.setData("text/plain", i);
+    function hasFieldWithName(name) {
+        return !!collection?.fields?.find((field) => field.name === name);
     }
 
-    function onFieldDrop(event, target) {
-        if (!event) {
+    function getSchemaFieldIndex(field) {
+        return nonDeletedFields.findIndex((f) => f === field);
+    }
+
+    function replaceIndexesColumn(oldName, newName) {
+        if (!collection?.fields?.length || oldName === newName || !newName) {
             return;
         }
 
-        event.dataTransfer.dropEffect = "move";
-
-        const start = parseInt(event.dataTransfer.getData("text/plain"));
-        const newSchema = collection.schema;
-
-        if (start < target) {
-            newSchema.splice(target + 1, 0, newSchema[start]);
-            newSchema.splice(start, 1);
-        } else {
-            newSchema.splice(target, 0, newSchema[start]);
-            newSchema.splice(start + 1, 1);
+        // field with the old name exists so there is no need to rename index columns
+        if (!!collection?.fields?.find((f) => f.name == oldName && !f._toDelete)) {
+            return;
         }
 
-        collection.schema = newSchema;
+        // update indexes on renamed fields
+        collection.indexes = collection.indexes.map((idx) =>
+            CommonHelper.replaceIndexColumn(idx, oldName, newName),
+        );
+    }
+
+    function onTypeCange() {
+        const oldFields = collection.fields || [];
+        const nonSystemFields = oldFields.filter((f) => !f.system);
+
+        const blank = structuredClone($scaffolds[collection.type]);
+        collection.fields = blank.fields;
+
+        for (let oldField of oldFields) {
+            if (!oldField.system) {
+                continue;
+            }
+
+            const idx = collection.fields.findIndex((f) => f.name == oldField.name);
+            if (idx < 0) {
+                continue;
+            }
+
+            // merge the default field with the existing one
+            collection.fields[idx] = Object.assign(collection.fields[idx], oldField);
+        }
+
+        for (let field of nonSystemFields) {
+            collection.fields.push(field);
+        }
+    }
+
+    function replaceIdentityFields(oldName, newName) {
+        if (oldName === newName || !newName) {
+            return;
+        }
+
+        let identityFields = collection.passwordAuth?.identityFields || [];
+
+        for (let i = 0; i < identityFields.length; i++) {
+            if (identityFields[i] == oldName) {
+                identityFields[i] = newName;
+            }
+        }
+    }
+
+    function onFieldRename(oldName, newName) {
+        replaceIndexesColumn(oldName, newName);
+        replaceIdentityFields(oldName, newName);
     }
 </script>
 
-<div class="block m-b-25">
-    <p class="txt-sm">
-        System fields:
-        <code class="txt-sm">id</code> ,
-        <code class="txt-sm">created</code> ,
-        <code class="txt-sm">updated</code>
-        {#if collection.isAuth}
-            ,
-            <code class="txt-sm">username</code> ,
-            <code class="txt-sm">email</code> ,
-            <code class="txt-sm">emailVisibility</code> ,
-            <code class="txt-sm">verified</code>
-        {/if}
-        .
-    </p>
-</div>
-
-<div class="accordions">
-    {#each collection.schema as field, i (field)}
-        <FieldAccordion
-            bind:field
-            key={i}
-            excludeNames={reservedNames.concat(getSiblingsFieldNames(field))}
-            on:remove={() => removeField(i)}
-            on:dragstart={(e) => onFieldDrag(e?.detail, i)}
-            on:drop={(e) => onFieldDrop(e?.detail, i)}
-        />
+<div class="schema-fields total-{collection.fields.length}">
+    {#each collection.fields as field, i (field)}
+        <Draggable
+            bind:list={collection.fields}
+            index={i}
+            disabled={field._toDelete}
+            dragHandleClass="drag-handle-wrapper"
+            on:drag={(e) => {
+                // blank drag placeholder
+                if (!e.detail) {
+                    return;
+                }
+                const ghost = e.detail.target;
+                ghost.style.opacity = 0;
+                setTimeout(() => {
+                    ghost?.style?.removeProperty("opacity"); // restore
+                }, 0);
+                e.detail.dataTransfer.setDragImage(ghost, 0, 0);
+            }}
+            on:sort={() => {
+                // reset errors since the schema keys index has changed
+                setErrors({});
+            }}
+        >
+            <svelte:component
+                this={fieldComponents[field.type]}
+                key={getSchemaFieldIndex(field)}
+                {collection}
+                bind:field
+                on:remove={() => removeField(i)}
+                on:duplicate={() => duplicateField(i)}
+                on:rename={(e) => onFieldRename(e.detail.oldName, e.detail.newName)}
+            />
+        </Draggable>
     {/each}
 </div>
 
-<div class="clearfix m-t-xs" />
+<NewField class="btn btn-block btn-outline" on:select={(e) => newField(e.detail)} />
 
-<button
-    type="button"
-    class="btn btn-block {collection?.isAuth || collection.schema?.length ? 'btn-secondary' : 'btn-warning'}"
-    on:click={newField}
->
-    <i class="ri-add-line" />
-    <span class="txt">New field</span>
-</button>
+<hr />
+
+<IndexesList bind:collection />

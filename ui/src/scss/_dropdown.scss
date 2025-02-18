@@ -55,12 +55,12 @@
         }
 
         // states
-        &:focus,
-        &:hover {
-            background: var(--baseAlt1Color);
-        }
         &.selected {
             background: var(--baseAlt2Color);
+        }
+        &:focus-visible,
+        &:hover {
+            background: var(--baseAlt1Color);
         }
         &:active {
             transition-duration: var(--activeAnimationSpeed);
@@ -128,4 +128,8 @@
     &.dropdown-nowrap {
         white-space: nowrap;
     }
+}
+
+.toggler-container {
+    outline: 0;
 }

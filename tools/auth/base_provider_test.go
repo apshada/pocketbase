@@ -1,135 +1,221 @@
 package auth
 
 import (
+	"bytes"
+	"context"
+	"encoding/json"
 	"testing"
 
 	"golang.org/x/oauth2"
 )
 
+func TestContext(t *testing.T) {
+	b := BaseProvider{}
+
+	before := b.Scopes()
+	if before != nil {
+		t.Errorf("Expected nil context, got %v", before)
+	}
+
+	b.SetContext(context.Background())
+
+	after := b.Scopes()
+	if after != nil {
+		t.Error("Expected non-nil context")
+	}
+}
+
+func TestDisplayName(t *testing.T) {
+	b := BaseProvider{}
+
+	before := b.DisplayName()
+	if before != "" {
+		t.Fatalf("Expected displayName to be empty, got %v", before)
+	}
+
+	b.SetDisplayName("test")
+
+	after := b.DisplayName()
+	if after != "test" {
+		t.Fatalf("Expected displayName to be 'test', got %v", after)
+	}
+}
+
+func TestPKCE(t *testing.T) {
+	b := BaseProvider{}
+
+	before := b.PKCE()
+	if before != false {
+		t.Fatalf("Expected pkce to be %v, got %v", false, before)
+	}
+
+	b.SetPKCE(true)
+
+	after := b.PKCE()
+	if after != true {
+		t.Fatalf("Expected pkce to be %v, got %v", true, after)
+	}
+}
+
 func TestScopes(t *testing.T) {
-	b := baseProvider{}
+	b := BaseProvider{}
 
 	before := b.Scopes()
 	if len(before) != 0 {
-		t.Errorf("Expected 0 scopes, got %v", before)
+		t.Fatalf("Expected 0 scopes, got %v", before)
 	}
 
 	b.SetScopes([]string{"test1", "test2"})
 
 	after := b.Scopes()
 	if len(after) != 2 {
-		t.Errorf("Expected 2 scopes, got %v", after)
+		t.Fatalf("Expected 2 scopes, got %v", after)
 	}
 }
 
 func TestClientId(t *testing.T) {
-	b := baseProvider{}
+	b := BaseProvider{}
 
 	before := b.ClientId()
 	if before != "" {
-		t.Errorf("Expected clientId to be empty, got %v", before)
+		t.Fatalf("Expected clientId to be empty, got %v", before)
 	}
 
 	b.SetClientId("test")
 
 	after := b.ClientId()
 	if after != "test" {
-		t.Errorf("Expected clientId to be 'test', got %v", after)
+		t.Fatalf("Expected clientId to be 'test', got %v", after)
 	}
 }
 
 func TestClientSecret(t *testing.T) {
-	b := baseProvider{}
+	b := BaseProvider{}
 
 	before := b.ClientSecret()
 	if before != "" {
-		t.Errorf("Expected clientSecret to be empty, got %v", before)
+		t.Fatalf("Expected clientSecret to be empty, got %v", before)
 	}
 
 	b.SetClientSecret("test")
 
 	after := b.ClientSecret()
 	if after != "test" {
-		t.Errorf("Expected clientSecret to be 'test', got %v", after)
+		t.Fatalf("Expected clientSecret to be 'test', got %v", after)
 	}
 }
 
-func TestRedirectUrl(t *testing.T) {
-	b := baseProvider{}
+func TestRedirectURL(t *testing.T) {
+	b := BaseProvider{}
 
-	before := b.RedirectUrl()
+	before := b.RedirectURL()
 	if before != "" {
-		t.Errorf("Expected RedirectUrl to be empty, got %v", before)
+		t.Fatalf("Expected RedirectURL to be empty, got %v", before)
 	}
 
-	b.SetRedirectUrl("test")
+	b.SetRedirectURL("test")
 
-	after := b.RedirectUrl()
+	after := b.RedirectURL()
 	if after != "test" {
-		t.Errorf("Expected RedirectUrl to be 'test', got %v", after)
+		t.Fatalf("Expected RedirectURL to be 'test', got %v", after)
 	}
 }
 
-func TestAuthUrl(t *testing.T) {
-	b := baseProvider{}
+func TestAuthURL(t *testing.T) {
+	b := BaseProvider{}
 
-	before := b.AuthUrl()
+	before := b.AuthURL()
 	if before != "" {
-		t.Errorf("Expected authUrl to be empty, got %v", before)
+		t.Fatalf("Expected authURL to be empty, got %v", before)
 	}
 
-	b.SetAuthUrl("test")
+	b.SetAuthURL("test")
 
-	after := b.AuthUrl()
+	after := b.AuthURL()
 	if after != "test" {
-		t.Errorf("Expected authUrl to be 'test', got %v", after)
+		t.Fatalf("Expected authURL to be 'test', got %v", after)
 	}
 }
 
-func TestTokenUrl(t *testing.T) {
-	b := baseProvider{}
+func TestTokenURL(t *testing.T) {
+	b := BaseProvider{}
 
-	before := b.TokenUrl()
+	before := b.TokenURL()
 	if before != "" {
-		t.Errorf("Expected tokenUrl to be empty, got %v", before)
+		t.Fatalf("Expected tokenURL to be empty, got %v", before)
 	}
 
-	b.SetTokenUrl("test")
+	b.SetTokenURL("test")
 
-	after := b.TokenUrl()
+	after := b.TokenURL()
 	if after != "test" {
-		t.Errorf("Expected tokenUrl to be 'test', got %v", after)
+		t.Fatalf("Expected tokenURL to be 'test', got %v", after)
 	}
 }
 
-func TestUserApiUrl(t *testing.T) {
-	b := baseProvider{}
+func TestUserInfoURL(t *testing.T) {
+	b := BaseProvider{}
 
-	before := b.UserApiUrl()
+	before := b.UserInfoURL()
 	if before != "" {
-		t.Errorf("Expected userApiUrl to be empty, got %v", before)
+		t.Fatalf("Expected userInfoURL to be empty, got %v", before)
 	}
 
-	b.SetUserApiUrl("test")
+	b.SetUserInfoURL("test")
 
-	after := b.UserApiUrl()
+	after := b.UserInfoURL()
 	if after != "test" {
-		t.Errorf("Expected userApiUrl to be 'test', got %v", after)
+		t.Fatalf("Expected userInfoURL to be 'test', got %v", after)
 	}
 }
 
-func TestBuildAuthUrl(t *testing.T) {
-	b := baseProvider{
-		authUrl:      "authUrl_test",
-		tokenUrl:     "tokenUrl_test",
-		redirectUrl:  "redirectUrl_test",
+func TestExtra(t *testing.T) {
+	b := BaseProvider{}
+
+	before := b.Extra()
+	if before != nil {
+		t.Fatalf("Expected extra to be empty, got %v", before)
+	}
+
+	extra := map[string]any{"a": 1, "b": 2}
+
+	b.SetExtra(extra)
+
+	after := b.Extra()
+
+	rawExtra, err := json.Marshal(extra)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	rawAfter, err := json.Marshal(after)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	if !bytes.Equal(rawExtra, rawAfter) {
+		t.Fatalf("Expected extra to be\n%s\ngot\n%s", rawExtra, rawAfter)
+	}
+
+	// ensure that it was shallow copied
+	after["b"] = 3
+	if d := b.Extra(); d["b"] != 2 {
+		t.Fatalf("Expected extra to remain unchanged, got\n%v", d)
+	}
+}
+
+func TestBuildAuthURL(t *testing.T) {
+	b := BaseProvider{
+		authURL:      "authURL_test",
+		tokenURL:     "tokenURL_test",
+		redirectURL:  "redirectURL_test",
 		clientId:     "clientId_test",
 		clientSecret: "clientSecret_test",
 		scopes:       []string{"test_scope"},
 	}
 
-	expected := "authUrl_test?access_type=offline&client_id=clientId_test&prompt=consent&redirect_uri=redirectUrl_test&response_type=code&scope=test_scope&state=state_test"
-	result := b.BuildAuthUrl("state_test", oauth2.AccessTypeOffline, oauth2.ApprovalForce)
+	expected := "authURL_test?access_type=offline&client_id=clientId_test&prompt=consent&redirect_uri=redirectURL_test&response_type=code&scope=test_scope&state=state_test"
+	result := b.BuildAuthURL("state_test", oauth2.AccessTypeOffline, oauth2.ApprovalForce)
 
 	if result != expected {
 		t.Errorf("Expected auth url %q, got %q", expected, result)
@@ -137,7 +223,7 @@ func TestBuildAuthUrl(t *testing.T) {
 }
 
 func TestClient(t *testing.T) {
-	b := baseProvider{}
+	b := BaseProvider{}
 
 	result := b.Client(&oauth2.Token{})
 	if result == nil {
@@ -146,10 +232,10 @@ func TestClient(t *testing.T) {
 }
 
 func TestOauth2Config(t *testing.T) {
-	b := baseProvider{
-		authUrl:      "authUrl_test",
-		tokenUrl:     "tokenUrl_test",
-		redirectUrl:  "redirectUrl_test",
+	b := BaseProvider{
+		authURL:      "authURL_test",
+		tokenURL:     "tokenURL_test",
+		redirectURL:  "redirectURL_test",
 		clientId:     "clientId_test",
 		clientSecret: "clientSecret_test",
 		scopes:       []string{"test"},
@@ -157,8 +243,8 @@ func TestOauth2Config(t *testing.T) {
 
 	result := b.oauth2Config()
 
-	if result.RedirectURL != b.RedirectUrl() {
-		t.Errorf("Expected redirectUrl %s, got %s", b.RedirectUrl(), result.RedirectURL)
+	if result.RedirectURL != b.RedirectURL() {
+		t.Errorf("Expected redirectURL %s, got %s", b.RedirectURL(), result.RedirectURL)
 	}
 
 	if result.ClientID != b.ClientId() {
@@ -169,12 +255,12 @@ func TestOauth2Config(t *testing.T) {
 		t.Errorf("Expected clientSecret %s, got %s", b.ClientSecret(), result.ClientSecret)
 	}
 
-	if result.Endpoint.AuthURL != b.AuthUrl() {
-		t.Errorf("Expected authUrl %s, got %s", b.AuthUrl(), result.Endpoint.AuthURL)
+	if result.Endpoint.AuthURL != b.AuthURL() {
+		t.Errorf("Expected authURL %s, got %s", b.AuthURL(), result.Endpoint.AuthURL)
 	}
 
-	if result.Endpoint.TokenURL != b.TokenUrl() {
-		t.Errorf("Expected authUrl %s, got %s", b.TokenUrl(), result.Endpoint.TokenURL)
+	if result.Endpoint.TokenURL != b.TokenURL() {
+		t.Errorf("Expected authURL %s, got %s", b.TokenURL(), result.Endpoint.TokenURL)
 	}
 
 	if len(result.Scopes) != len(b.Scopes()) || result.Scopes[0] != b.Scopes()[0] {

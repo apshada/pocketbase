@@ -3,30 +3,30 @@
     --monospaceFontFamily: 'Ubuntu Mono', monospace, emoji;
     --iconFontFamily: 'remixicon';
 
-    --txtPrimaryColor:  #16161a;
-    --txtHintColor:     #666f75;
+    --txtPrimaryColor:  #1a1a24;
+    --txtHintColor:     #617079;
     --txtDisabledColor: #a0a6ac;
 
-    --primaryColor: #16161a;
+    --primaryColor: #1a1a24;
 
     --bodyColor: #f8f9fa;
 
     --baseColor:     #ffffff;
-    --baseAlt1Color: #ebeff2;
-    --baseAlt2Color: #dee3e8;
-    --baseAlt3Color: #a9b4bc;
-    --baseAlt4Color: #7c868d;
+    --baseAlt1Color: #e3e8ed;
+    --baseAlt2Color: #d7dde3;
+    --baseAlt3Color: #c9d0da;
+    --baseAlt4Color: #a5b0c0;
 
-    --infoColor:       #3da9fc;
-    --infoAltColor:    #d8eefe;
-    --successColor:    #2cb67d;
-    --successAltColor: #d6f5e8;
-    --dangerColor:     #ef4565;
-    --dangerAltColor:  #fcdee4;
-    --warningColor:    #ff8e3c;
-    --warningAltColor: #ffe7d6;
+    --infoColor:       #5499e8;
+    --infoAltColor:    #cee2f8;
+    --successColor:    #32ad84;
+    --successAltColor: #c4eedc;
+    --dangerColor:     #e34562;
+    --dangerAltColor:  #f7cad2;
+    --warningColor:    #ff944d;
+    --warningAltColor: #ffd4b8;
 
-    --overlayColor:   rgba(65, 80, 105, 0.25);
+    --overlayColor:   rgba(53, 71, 104, 0.28);
     --tooltipColor:   rgba(0, 0, 0, 0.85);
     --shadowColor:    rgba(0, 0, 0, 0.06);
 
@@ -43,7 +43,7 @@
     --inputHeight: 34px;
 
     --btnHeight:   40px;
-    --xsBtnHeight: 24px;
+    --xsBtnHeight: 22px;
     --smBtnHeight: 30px;
     --lgBtnHeight: 54px;
 
@@ -58,19 +58,20 @@
     --lgWrapperWidth: 1200px;
 
     --appSidebarWidth: 75px;
-    --pageSidebarWidth: 220px;
+    --pageSidebarWidth: 235px;
 
     --baseAnimationSpeed: 150ms;
     --activeAnimationSpeed: 70ms;
     --entranceAnimationSpeed: 250ms;
 
-    --baseRadius: 3px;
+    --baseRadius: 4px;
     --lgRadius:   12px;
-    --btnRadius:  3px;
+    --btnRadius:  4px;
 
     // https://developer.mozilla.org/en-US/docs/Web/CSS/accent-color
     accent-color: var(--primaryColor);
 }
+
 
 // Maps
 // ----

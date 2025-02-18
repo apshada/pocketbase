@@ -1,16 +1,13 @@
 <script>
-    import { SchemaField } from "pocketbase";
-    import CommonHelper from "@/utils/CommonHelper";
     import Field from "@/components/base/Field.svelte";
+    import FieldLabel from "@/components/records/fields/FieldLabel.svelte";
 
-    export let field = new SchemaField();
+    export let field;
     export let value = undefined;
 </script>
 
 <Field class="form-field {field.required ? 'required' : ''}" name={field.name} let:uniqueId>
-    <label for={uniqueId}>
-        <i class={CommonHelper.getFieldTypeIcon(field.type)} />
-        <span class="txt">{field.name}</span>
-    </label>
+    <FieldLabel {uniqueId} {field} />
+
     <input type="email" id={uniqueId} required={field.required} bind:value />
 </Field>

@@ -6,6 +6,9 @@ import (
 	"mime"
 	"net/http"
 	"os/exec"
+	"strings"
+
+	"github.com/pocketbase/pocketbase/tools/hook"
 )
 
 var _ Mailer = (*Sendmail)(nil)
@@ -15,15 +18,36 @@ var _ Mailer = (*Sendmail)(nil)
 //
 // This client is usually recommended only for development and testing.
 type Sendmail struct {
+	onSend *hook.Hook[*SendEvent]
 }
 
-// Send implements `mailer.Mailer` interface.
+// OnSend implements [mailer.SendInterceptor] interface.
+func (c *Sendmail) OnSend() *hook.Hook[*SendEvent] {
+	if c.onSend == nil {
+		c.onSend = &hook.Hook[*SendEvent]{}
+	}
+	return c.onSend
+}
+
+// Send implements [mailer.Mailer] interface.
 func (c *Sendmail) Send(m *Message) error {
+	if c.onSend != nil {
+		return c.onSend.Trigger(&SendEvent{Message: m}, func(e *SendEvent) error {
+			return c.send(e.Message)
+		})
+	}
+
+	return c.send(m)
+}
+
+func (c *Sendmail) send(m *Message) error {
+	toAddresses := addressesToStrings(m.To, false)
+
 	headers := make(http.Header)
 	headers.Set("Subject", mime.QEncoding.Encode("utf-8", m.Subject))
 	headers.Set("From", m.From.String())
-	headers.Set("To", m.To.String())
 	headers.Set("Content-Type", "text/html; charset=UTF-8")
+	headers.Set("To", strings.Join(toAddresses, ","))
 
 	cmdPath, err := findSendmailPath()
 	if err != nil {
@@ -51,7 +75,7 @@ func (c *Sendmail) Send(m *Message) error {
 	}
 	// ---
 
-	sendmail := exec.Command(cmdPath, m.To.Address)
+	sendmail := exec.Command(cmdPath, strings.Join(toAddresses, ","))
 	sendmail.Stdin = &buffer
 
 	return sendmail.Run()

@@ -34,7 +34,7 @@
         color: var(--txtHintColor);
     }
     .close {
-        $size: 30px;
+        $size: 28px;
         display: inline-flex;
         margin-right: -5px;
         width: $size;
@@ -112,10 +112,17 @@
         margin: var(--baseSpacing) auto;
         @include shadowize();
     }
-    .app-sidebar ~ .app-body & {
-        left: var(--appSidebarWidth);
+}
+
+@media screen and (min-width: 980px) {
+    body:not(.overlay-active):has(.app-sidebar) {
+        .toasts-wrapper {
+            left: var(--appSidebarWidth);
+        }
     }
-    .app-sidebar ~ .app-body .page-sidebar ~ & {
-        left: calc(var(--appSidebarWidth) + var(--pageSidebarWidth));
+    body:not(.overlay-active):has(.page-sidebar) {
+        .toasts-wrapper {
+            left: calc(var(--appSidebarWidth) + var(--pageSidebarWidth));
+        }
     }
 }

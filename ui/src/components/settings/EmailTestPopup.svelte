@@ -1,11 +1,12 @@
 <script>
-    import { createEventDispatcher, tick } from "svelte";
+    import Field from "@/components/base/Field.svelte";
+    import OverlayPanel from "@/components/base/OverlayPanel.svelte";
+    import ObjectSelect from "@/components/base/ObjectSelect.svelte";
+    import { setErrors } from "@/stores/errors";
+    import { addErrorToast, addSuccessToast } from "@/stores/toasts";
     import ApiClient from "@/utils/ApiClient";
     import CommonHelper from "@/utils/CommonHelper";
-    import { addErrorToast, addSuccessToast } from "@/stores/toasts";
-    import { setErrors } from "@/stores/errors";
-    import OverlayPanel from "@/components/base/OverlayPanel.svelte";
-    import Field from "@/components/base/Field.svelte";
+    import { createEventDispatcher, tick } from "svelte";
 
     const dispatch = createEventDispatcher();
 
@@ -14,24 +15,38 @@
     const testRequestKey = "email_test_request";
 
     const templateOptions = [
-        { label: '"Verification" template', value: "verification" },
-        { label: '"Password reset" template', value: "password-reset" },
-        { label: '"Confirm email change" template', value: "email-change" },
+        { label: "Verification", value: "verification" },
+        { label: "Password reset", value: "password-reset" },
+        { label: "Confirm email change", value: "email-change" },
+        { label: "OTP", value: "otp" },
+        { label: "Login alert", value: "login-alert" },
     ];
 
     let panel;
+    let collectionIdOrName = "";
     let email = localStorage.getItem(emailStorageKey);
     let template = templateOptions[0].value;
     let isSubmitting = false;
     let testTimeoutId = null;
+    let authCollections = [];
+    let isAuthCollectionsLoading = false;
+    let showAuthCollections = false;
 
-    $: canSubmit = !!email && !!template;
+    $: canSubmit = !!email && !!template && !!collectionIdOrName;
 
-    export function show(emailArg = "", templateArg = "") {
-        email = emailArg || localStorage.getItem(emailStorageKey);
-        template = templateArg || templateOptions[0].value;
-
+    export function show(collectionArg = "", emailArg = "", templateArg = "") {
         setErrors({}); // reset any previous errors
+
+        showAuthCollections = false;
+
+        collectionIdOrName = collectionArg || "";
+        if (!collectionIdOrName) {
+            loadAuthCollections();
+        }
+
+        email = emailArg || localStorage.getItem(emailStorageKey);
+
+        template = templateArg || templateOptions[0].value;
 
         panel?.show();
     }
@@ -42,7 +57,7 @@
     }
 
     async function submit() {
-        if (!canSubmit || isSubmitting) {
+        if (!canSubmit || isSubmitting || !collectionIdOrName) {
             return;
         }
 
@@ -59,7 +74,7 @@
         }, 30000);
 
         try {
-            await ApiClient.settings.testEmail(email, template, {
+            await ApiClient.settings.testEmail(collectionIdOrName, email, template, {
                 $cancelKey: testRequestKey,
             });
 
@@ -72,10 +87,31 @@
             hide();
         } catch (err) {
             isSubmitting = false;
-            ApiClient.errorResponseHandler(err);
+            ApiClient.error(err);
         }
 
         clearTimeout(testTimeoutId);
+    }
+
+    async function loadAuthCollections() {
+        showAuthCollections = true;
+        isAuthCollectionsLoading = true;
+
+        try {
+            authCollections = await ApiClient.collections.getFullList({
+                filter: "type='auth'",
+                sort: "+name",
+                requestKey: formId + "_collections_loading",
+            });
+
+            collectionIdOrName = authCollections[0]?.id || "";
+            isAuthCollectionsLoading = false;
+        } catch (err) {
+            if (!err.isAbort) {
+                isAuthCollectionsLoading = false;
+                ApiClient.error(err);
+            }
+        }
     }
 </script>
 
@@ -109,6 +145,22 @@
             {/each}
         </Field>
 
+        {#if showAuthCollections}
+            <Field class="form-field required" name="collection" let:uniqueId>
+                <label for={uniqueId}>Auth collection</label>
+                <ObjectSelect
+                    id={uniqueId}
+                    selectPlaceholder={isAuthCollectionsLoading
+                        ? "Loading auth collections..."
+                        : "Select auth collection"}
+                    noOptionsText={"No auth collections found"}
+                    selectionKey="id"
+                    items={authCollections}
+                    bind:keyOfSelected={collectionIdOrName}
+                />
+            </Field>
+        {/if}
+
         <Field class="form-field required m-0" name="email" let:uniqueId>
             <label for={uniqueId}>To email address</label>
             <!-- svelte-ignore a11y-autofocus -->
@@ -117,14 +169,15 @@
     </form>
 
     <svelte:fragment slot="footer">
-        <button type="button" class="btn btn-secondary" on:click={hide} disabled={isSubmitting}>Close</button>
+        <button type="button" class="btn btn-transparent" on:click={hide} disabled={isSubmitting}
+            >Close</button
+        >
         <button
             type="submit"
             form={formId}
             class="btn btn-expanded"
             class:btn-loading={isSubmitting}
             disabled={!canSubmit || isSubmitting}
-            on:click={() => submit()}
         >
             <i class="ri-mail-send-line" />
             <span class="txt">Send</span>

@@ -1,68 +1,100 @@
 <script>
-    import { createEventDispatcher } from "svelte";
+    import Scroller from "@/components/base/Scroller.svelte";
+    import SortHeader from "@/components/base/SortHeader.svelte";
+    import LogDate from "@/components/logs/LogDate.svelte";
+    import LogLevel from "@/components/logs/LogLevel.svelte";
     import ApiClient from "@/utils/ApiClient";
     import CommonHelper from "@/utils/CommonHelper";
-    import SortHeader from "@/components/base/SortHeader.svelte";
-    import FormattedDate from "@/components/base/FormattedDate.svelte";
-    import HorizontalScroller from "@/components/base/HorizontalScroller.svelte";
+    import { createEventDispatcher } from "svelte";
+    import { fly } from "svelte/transition";
 
     const dispatch = createEventDispatcher();
-    const labelMethodClass = {
-        get: "label-info",
-        post: "label-success",
-        patch: "label-warning",
-        delete: "label-danger",
-    };
+
+    const perPage = 50;
 
     export let filter = "";
     export let presets = "";
-    export let sort = "-rowid";
+    export let zoom = {};
+    export let sort = "-@rowid";
 
-    let items = [];
+    let logs = [];
     let currentPage = 1;
-    let totalItems = 0;
+    let lastLoadCount = 0;
     let isLoading = false;
-    let yieldedItemsId = 0;
+    let yieldedId = 0;
+    let bulkSelected = {};
 
-    $: if (typeof sort !== "undefined" || typeof filter !== "undefined" || typeof presets !== "undefined") {
+    $: if (
+        typeof sort !== "undefined" ||
+        typeof filter !== "undefined" ||
+        typeof presets !== "undefined" ||
+        typeof zoom !== "undefined"
+    ) {
         clearList();
         load(1);
     }
 
-    $: canLoadMore = totalItems > items.length;
+    $: canLoadMore = lastLoadCount >= perPage;
+
+    $: totalBulkSelected = Object.keys(bulkSelected).length;
+
+    $: areAllLogsSelected = logs.length && totalBulkSelected === logs.length;
 
     export async function load(page = 1, breakTasks = true) {
         isLoading = true;
 
+        const normalizedFilter = [presets, CommonHelper.normalizeLogsFilter(filter)];
+
+        if (zoom.min && zoom.max) {
+            normalizedFilter.push(`created >= "${zoom.min}" && created <= "${zoom.max}"`);
+        }
+
         return ApiClient.logs
-            .getRequestsList(page, 30, {
+            .getList(page, perPage, {
                 sort: sort,
-                filter: [presets, filter].filter(Boolean).join("&&"),
+                skipTotal: 1,
+                filter: normalizedFilter
+                    .filter(Boolean)
+                    .map((f) => "(" + f + ")")
+                    .join("&&"),
             })
             .then(async (result) => {
                 if (page <= 1) {
                     clearList();
                 }
 
+                const items = CommonHelper.toArray(result.items);
+
                 isLoading = false;
                 currentPage = result.page;
-                totalItems = result.totalItems;
-                dispatch("load", items.concat(result.items));
+                lastLoadCount = result.items?.length || 0;
 
-                // optimize the items listing by rendering the rows in task batches
+                dispatch("load", logs.concat(items));
+
+                // optimize the logs listing by rendering the rows in task batches
                 if (breakTasks) {
-                    const currentYieldId = ++yieldedItemsId;
-                    while (result.items.length) {
-                        if (yieldedItemsId != currentYieldId) {
+                    const currentYieldId = ++yieldedId;
+
+                    while (items.length) {
+                        if (yieldedId != currentYieldId) {
                             break; // new yeild has been started
                         }
 
-                        items = items.concat(result.items.splice(0, 10));
+                        const subset = items.splice(0, 10);
+                        for (let item of subset) {
+                            CommonHelper.pushOrReplaceByKey(logs, item);
+                        }
+
+                        logs = logs;
 
                         await CommonHelper.yieldToMain();
                     }
                 } else {
-                    items = items.concat(result.items);
+                    for (let item of items) {
+                        CommonHelper.pushOrReplaceByKey(logs, item);
+                    }
+
+                    logs = logs;
                 }
             })
             .catch((err) => {
@@ -70,54 +102,154 @@
                     isLoading = false;
                     console.warn(err);
                     clearList();
-                    ApiClient.errorResponseHandler(err, false);
+                    ApiClient.error(err, !normalizedFilter || err?.status != 400); // silence filter errors
                 }
             });
     }
 
     function clearList() {
-        items = [];
+        logs = [];
+        bulkSelected = {};
         currentPage = 1;
-        totalItems = 0;
+        lastLoadCount = 0;
+    }
+
+    function toggleSelectAllLogs() {
+        if (areAllLogsSelected) {
+            deselectAllLogs();
+        } else {
+            selectAllLogs();
+        }
+    }
+
+    function deselectAllLogs() {
+        bulkSelected = {};
+    }
+
+    function selectAllLogs() {
+        for (const log of logs) {
+            bulkSelected[log.id] = log;
+        }
+
+        bulkSelected = bulkSelected;
+    }
+
+    function toggleSelectLog(log) {
+        if (!bulkSelected[log.id]) {
+            bulkSelected[log.id] = log;
+        } else {
+            delete bulkSelected[log.id];
+        }
+
+        bulkSelected = bulkSelected; // trigger reactivity
+    }
+
+    const dateFilenameRegex = /[-:\. ]/gi;
+
+    function downloadSelected() {
+        // extract the bulk selected log objects sorted desc
+        const selected = Object.values(bulkSelected).sort((a, b) => {
+            if (a.created < b.created) {
+                return 1;
+            }
+
+            if (a.created > b.created) {
+                return -1;
+            }
+
+            return 0;
+        });
+
+        if (!selected.length) {
+            return; // nothing to download
+        }
+
+        if (selected.length == 1) {
+            return CommonHelper.downloadJson(
+                selected[0],
+                "log_" + selected[0].created.replaceAll(dateFilenameRegex, "") + ".json",
+            );
+        }
+
+        const to = selected[0].created.replaceAll(dateFilenameRegex, "");
+        const from = selected[selected.length - 1].created.replaceAll(dateFilenameRegex, "");
+
+        return CommonHelper.downloadJson(selected, `${selected.length}_logs_${from}_to_${to}.json`);
+    }
+
+    function getLogPreviewKeys(log) {
+        let keys = [];
+
+        if (!log.data) {
+            return keys;
+        }
+
+        if (log.data.type == "request") {
+            const requestKeys = ["status", "execTime", "auth", "authId", "userIP"];
+            for (let key of requestKeys) {
+                if (typeof log.data[key] != "undefined") {
+                    keys.push({ key });
+                }
+            }
+
+            // add the referer if it is from a different source
+            if (log.data.referer && !log.data.referer.includes(window.location.host)) {
+                keys.push({ key: "referer" });
+            }
+        } else {
+            // extract the first 6 keys (excluding the error and details)
+            const allKeys = Object.keys(log.data);
+            for (const key of allKeys) {
+                if (key != "error" && key != "details" && keys.length < 6) {
+                    keys.push({ key });
+                }
+            }
+        }
+
+        // ensure that the error and detail keys are last
+        if (log.data.error) {
+            keys.push({ key: "error", label: "label-danger" });
+        }
+        if (log.data.details) {
+            keys.push({ key: "details", label: "label-warning" });
+        }
+
+        return keys;
     }
 </script>
 
-<HorizontalScroller class="table-wrapper">
+<Scroller class="table-wrapper">
     <table class="table" class:table-loading={isLoading}>
         <thead>
             <tr>
-                <SortHeader disable class="col-field-method" name="method" bind:sort>
+                <th class="bulk-select-col min-width">
+                    {#if isLoading}
+                        <span class="loader loader-sm" />
+                    {:else}
+                        <div class="form-field">
+                            <input
+                                type="checkbox"
+                                id="checkbox_0"
+                                disabled={!logs.length}
+                                checked={areAllLogsSelected}
+                                on:change={() => toggleSelectAllLogs()}
+                            />
+                            <label for="checkbox_0" />
+                        </div>
+                    {/if}
+                </th>
+
+                <SortHeader disable class="col-field-level min-width" name="level" bind:sort>
                     <div class="col-header-content">
-                        <i class="ri-global-line" />
-                        <span class="txt">method</span>
+                        <i class="ri-bookmark-line" />
+                        <span class="txt">level</span>
                     </div>
                 </SortHeader>
 
-                <SortHeader disable class="col-type-text col-field-url" name="url" bind:sort>
+                <SortHeader disable class="col-type-text col-field-message" name="data" bind:sort>
                     <div class="col-header-content">
-                        <i class={CommonHelper.getFieldTypeIcon("url")} />
-                        <span class="txt">url</span>
-                    </div>
-                </SortHeader>
-
-                <SortHeader disable class="col-type-text col-field-referer" name="referer" bind:sort>
-                    <div class="col-header-content">
-                        <i class={CommonHelper.getFieldTypeIcon("url")} />
-                        <span class="txt">referer</span>
-                    </div>
-                </SortHeader>
-
-                <SortHeader disable class="col-type-number col-field-userIp" name="userIp" bind:sort>
-                    <div class="col-header-content">
-                        <i class={CommonHelper.getFieldTypeIcon("number")} />
-                        <span class="txt">User IP</span>
-                    </div>
-                </SortHeader>
-
-                <SortHeader disable class="col-type-number col-field-status" name="status" bind:sort>
-                    <div class="col-header-content">
-                        <i class={CommonHelper.getFieldTypeIcon("number")} />
-                        <span class="txt">status</span>
+                        <i class="ri-file-list-2-line" />
+                        <span class="txt">message</span>
                     </div>
                 </SortHeader>
 
@@ -132,53 +264,63 @@
             </tr>
         </thead>
         <tbody>
-            {#each items as item (item.id)}
+            {#each logs as log (log.id)}
+                {@const isRequest = log.data?.type == "request"}
+                {@const previewKeys = getLogPreviewKeys(log)}
                 <tr
                     tabindex="0"
                     class="row-handle"
-                    on:click={() => dispatch("select", item)}
+                    on:click={() => dispatch("select", log)}
                     on:keydown={(e) => {
                         if (e.code === "Enter") {
                             e.preventDefault();
-                            dispatch("select", item);
+                            dispatch("select", log);
                         }
                     }}
                 >
-                    <td class="col-type-text col-field-method min-width">
-                        <span class="label txt-uppercase {labelMethodClass[item.method.toLowerCase()]}">
-                            {item.method?.toUpperCase()}
-                        </span>
+                    <td class="bulk-select-col min-width">
+                        <!-- svelte-ignore a11y-click-events-have-key-events -->
+                        <!-- svelte-ignore a11y-no-static-element-interactions -->
+                        <div class="form-field" on:click|stopPropagation>
+                            <input
+                                type="checkbox"
+                                id="checkbox_{log.id}"
+                                checked={bulkSelected[log.id]}
+                                on:change={() => toggleSelectLog(log)}
+                            />
+                            <label for="checkbox_{log.id}" />
+                        </div>
                     </td>
 
-                    <td class="col-type-text col-field-url">
-                        <span class="txt txt-ellipsis" title={item.url}>
-                            {item.url}
-                        </span>
-                        {#if item.meta?.errorMessage || item.meta?.errorData}
-                            <i class="ri-error-warning-line txt-danger m-l-5 m-r-5" title="Error" />
+                    <td class="col-type-text col-field-level min-width">
+                        <LogLevel level={log.level} />
+                    </td>
+
+                    <td class="col-type-text col-field-message">
+                        <div class="flex flex-gap-10">
+                            <span class="txt-ellipsis">{log.message}</span>
+                        </div>
+                        {#if previewKeys.length}
+                            <div class="flex flex-wrap flex-gap-10 m-t-10">
+                                {#each previewKeys as keyItem}
+                                    <span class="label label-sm {keyItem.label || ''}">
+                                        {#if isRequest && keyItem.key == "execTime"}
+                                            {keyItem.key}: {log.data[keyItem.key]}ms
+                                        {:else}
+                                            {keyItem.key}: {CommonHelper.stringifyValue(
+                                                log.data[keyItem.key],
+                                                "N/A",
+                                                80,
+                                            )}
+                                        {/if}
+                                    </span>
+                                {/each}
+                            </div>
                         {/if}
                     </td>
 
-                    <td class="col-type-text col-field-referer">
-                        <span class="txt txt-ellipsis" class:txt-hint={!item.referer} title={item.referer}>
-                            {item.referer || "N/A"}
-                        </span>
-                    </td>
-
-                    <td class="col-type-number col-field-userIp">
-                        <span class="txt txt-ellipsis" class:txt-hint={!item.userIp} title={item.userIp}>
-                            {item.userIp || "N/A"}
-                        </span>
-                    </td>
-
-                    <td class="col-type-number col-field-status">
-                        <span class="label" class:label-danger={item.status >= 400}>
-                            {item.status}
-                        </span>
-                    </td>
-
                     <td class="col-type-date col-field-created">
-                        <FormattedDate date={item.created} />
+                        <LogDate date={log.created} />
                     </td>
 
                     <td class="col-type-action min-width">
@@ -189,7 +331,7 @@
                 {#if isLoading}
                     <tr>
                         <td colspan="99" class="p-xs">
-                            <span class="skeleton-loader" />
+                            <span class="skeleton-loader m-0" />
                         </td>
                     </tr>
                 {:else}
@@ -211,14 +353,10 @@
             {/each}
         </tbody>
     </table>
-</HorizontalScroller>
+</Scroller>
 
-{#if items.length}
-    <small class="block txt-hint txt-right m-t-sm">Showing {items.length} of {totalItems}</small>
-{/if}
-
-{#if items.length && canLoadMore}
-    <div class="block txt-center m-t-xs">
+{#if logs.length && canLoadMore}
+    <div class="block txt-center m-t-sm">
         <button
             type="button"
             class="btn btn-lg btn-secondary btn-expanded"
@@ -226,7 +364,41 @@
             class:btn-disabled={isLoading}
             on:click={() => load(currentPage + 1)}
         >
-            <span class="txt">Load more ({totalItems - items.length})</span>
+            <span class="txt">Load more</span>
         </button>
     </div>
 {/if}
+
+{#if totalBulkSelected}
+    <div class="bulkbar" transition:fly={{ duration: 150, y: 5 }}>
+        <div class="txt">
+            Selected <strong>{totalBulkSelected}</strong>
+            {totalBulkSelected === 1 ? "log" : "logs"}
+        </div>
+        <button
+            type="button"
+            class="btn btn-xs btn-transparent btn-outline p-l-5 p-r-5"
+            on:click={() => deselectAllLogs()}
+        >
+            <span class="txt">Reset</span>
+        </button>
+        <div class="flex-fill" />
+        <button type="button" class="btn btn-sm" on:click={downloadSelected}>
+            <span class="txt">Download as JSON</span>
+        </button>
+    </div>
+{/if}
+
+<style>
+    .bulkbar {
+        position: sticky;
+        margin-top: var(--smSpacing);
+        bottom: var(--baseSpacing);
+    }
+    .col-field-level {
+        min-width: 100px;
+    }
+    .col-field-message {
+        min-width: 600px;
+    }
+</style>

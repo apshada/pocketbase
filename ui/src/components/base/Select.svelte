@@ -1,8 +1,8 @@
 <script>
-    import { onMount } from "svelte";
-    import CommonHelper from "@/utils/CommonHelper";
+    import { onMount, createEventDispatcher } from "svelte";
     import tooltip from "@/actions/tooltip";
     import Toggler from "@/components/base/Toggler.svelte";
+    import CommonHelper from "@/utils/CommonHelper";
 
     export let id = "";
     export let noOptionsText = "No options found";
@@ -11,14 +11,20 @@
     export let items = [];
     export let multiple = false;
     export let disabled = false;
-    export let selected = multiple ? [] : undefined;
-    export let toggle = false; // toggle option on click
+    export let readonly = false;
+    export let upside = false;
+    export let zeroFunc = () => (multiple ? [] : undefined);
+    export let selected = zeroFunc();
+    export let toggle = multiple; // toggle option on click
+    export let closable = true; // close the dropdown on option select/deselect
     export let labelComponent = undefined; // custom component to use for each selected option label
     export let labelComponentProps = {}; // props to pass to the custom option component
     export let optionComponent = undefined; // custom component to use for each dropdown option item
     export let optionComponentProps = {}; // props to pass to the custom option component
     export let searchable = false; // whether to show the dropdown options search input
     export let searchFunc = undefined; // custom search option filter: `function(item, searchTerm):boolean`
+
+    const dispatch = createEventDispatcher();
 
     let classes = "";
     export { classes as class }; // export reserved keyword
@@ -51,8 +57,10 @@
         let normalized = CommonHelper.toArray(selected);
         if (CommonHelper.inArray(normalized, item)) {
             CommonHelper.removeByValue(normalized, item);
-            selected = normalized;
+            selected = multiple ? normalized : normalized?.[0] || zeroFunc();
         }
+
+        dispatch("change", { selected });
 
         // emulate native change event
         container?.dispatchEvent(new CustomEvent("change", { detail: selected, bubbles: true }));
@@ -68,6 +76,8 @@
             selected = item;
         }
 
+        dispatch("change", { selected });
+
         // emulate native change event
         container?.dispatchEvent(new CustomEvent("change", { detail: selected, bubbles: true }));
     }
@@ -77,7 +87,12 @@
     }
 
     export function reset() {
-        selected = multiple ? [] : undefined;
+        selected = zeroFunc();
+
+        dispatch("change", { selected });
+
+        // emulate native change event
+        container?.dispatchEvent(new CustomEvent("change", { detail: selected, bubbles: true }));
     }
 
     export function showDropdown() {
@@ -155,6 +170,9 @@
     function handleOptionKeypress(e, item) {
         if (e.code === "Enter" || e.code === "Space") {
             handleOptionSelect(e, item);
+            if (closable) {
+                hideDropdown();
+            }
         }
     }
 
@@ -176,7 +194,7 @@
     function onLabelClick(e) {
         e.stopPropagation();
 
-        !disabled && toggler?.toggle();
+        !readonly && !disabled && toggler?.toggle();
     }
 
     onMount(() => {
@@ -194,9 +212,17 @@
     });
 </script>
 
-<div bind:this={container} class="select {classes}" class:multiple class:disabled>
-    <div bind:this={labelDiv} tabindex={disabled ? "-1" : "0"} class="selected-container" class:disabled>
-        {#each CommonHelper.toArray(selected) as item}
+<div bind:this={container} class="select {classes}" class:upside class:multiple class:disabled class:readonly>
+    <!-- svelte-ignore a11y-no-noninteractive-tabindex -->
+    <div
+        bind:this={labelDiv}
+        tabindex={disabled || readonly ? "-1" : "0"}
+        class="selected-container"
+        class:disabled
+        class:readonly
+        role="button"
+    >
+        {#each CommonHelper.toArray(selected) as item, i}
             <div class="option">
                 {#if labelComponent}
                     <svelte:component this={labelComponent} {item} {...labelComponentProps} />
@@ -205,6 +231,8 @@
                 {/if}
 
                 {#if multiple || toggle}
+                    <!-- svelte-ignore a11y-click-events-have-key-events -->
+                    <!-- svelte-ignore a11y-no-static-element-interactions -->
                     <span
                         class="clear"
                         use:tooltip={"Clear"}
@@ -215,16 +243,16 @@
                 {/if}
             </div>
         {:else}
-            <div class="block txt-placeholder" class:link-hint={!disabled}>
+            <div class="block txt-placeholder" class:link-hint={!disabled && !readonly}>
                 {selectPlaceholder}
             </div>
         {/each}
     </div>
 
-    {#if !disabled}
+    {#if !disabled && !readonly}
         <Toggler
             bind:this={toggler}
-            class="dropdown dropdown-block options-dropdown dropdown-left"
+            class="dropdown dropdown-block options-dropdown dropdown-left {upside ? 'dropdown-upside' : ''}"
             trigger={labelDiv}
             on:show={onDropdownShow}
             on:hide
@@ -247,7 +275,7 @@
                             <div class="addon suffix p-r-5">
                                 <button
                                     type="button"
-                                    class="btn btn-sm btn-circle btn-secondary clear"
+                                    class="btn btn-sm btn-circle btn-transparent clear"
                                     on:click|preventDefault|stopPropagation={resetSearch}
                                 >
                                     <i class="ri-close-line" />
@@ -262,9 +290,13 @@
 
             <div class="options-list">
                 {#each filteredItems as item}
+                    <!-- svelte-ignore a11y-no-noninteractive-tabindex -->
+                    <!-- svelte-ignore a11y-no-static-element-interactions -->
                     <div
                         tabindex="0"
-                        class="dropdown-item option closable"
+                        class="dropdown-item option"
+                        role="menuitem"
+                        class:closable
                         class:selected={isSelected(item)}
                         on:click={(e) => handleOptionSelect(e, item)}
                         on:keydown={(e) => handleOptionKeypress(e, item)}

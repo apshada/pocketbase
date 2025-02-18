@@ -1,131 +1,139 @@
 package apis
 
 import (
-	"fmt"
 	"net/http"
 
 	validation "github.com/go-ozzo/ozzo-validation/v4"
-	"github.com/labstack/echo/v5"
 	"github.com/pocketbase/pocketbase/core"
 	"github.com/pocketbase/pocketbase/forms"
-	"github.com/pocketbase/pocketbase/tools/security"
+	"github.com/pocketbase/pocketbase/tools/router"
 )
 
 // bindSettingsApi registers the settings api endpoints.
-func bindSettingsApi(app core.App, rg *echo.Group) {
-	api := settingsApi{app: app}
-
-	subGroup := rg.Group("/settings", ActivityLogger(app), RequireAdminAuth())
-	subGroup.GET("", api.list)
-	subGroup.PATCH("", api.set)
-	subGroup.POST("/test/s3", api.testS3)
-	subGroup.POST("/test/email", api.testEmail)
+func bindSettingsApi(app core.App, rg *router.RouterGroup[*core.RequestEvent]) {
+	subGroup := rg.Group("/settings").Bind(RequireSuperuserAuth())
+	subGroup.GET("", settingsList)
+	subGroup.PATCH("", settingsSet)
+	subGroup.POST("/test/s3", settingsTestS3)
+	subGroup.POST("/test/email", settingsTestEmail)
+	subGroup.POST("/apple/generate-client-secret", settingsGenerateAppleClientSecret)
 }
 
-type settingsApi struct {
-	app core.App
-}
-
-func (api *settingsApi) list(c echo.Context) error {
-	settings, err := api.app.Settings().RedactClone()
+func settingsList(e *core.RequestEvent) error {
+	clone, err := e.App.Settings().Clone()
 	if err != nil {
-		return NewBadRequestError("", err)
+		return e.InternalServerError("", err)
 	}
 
-	event := &core.SettingsListEvent{
-		HttpContext:      c,
-		RedactedSettings: settings,
-	}
+	event := new(core.SettingsListRequestEvent)
+	event.RequestEvent = e
+	event.Settings = clone
 
-	return api.app.OnSettingsListRequest().Trigger(event, func(e *core.SettingsListEvent) error {
-		return e.HttpContext.JSON(http.StatusOK, e.RedactedSettings)
+	return e.App.OnSettingsListRequest().Trigger(event, func(e *core.SettingsListRequestEvent) error {
+		return e.JSON(http.StatusOK, e.Settings)
 	})
 }
 
-func (api *settingsApi) set(c echo.Context) error {
-	form := forms.NewSettingsUpsert(api.app)
+func settingsSet(e *core.RequestEvent) error {
+	event := new(core.SettingsUpdateRequestEvent)
+	event.RequestEvent = e
 
-	// load request
-	if err := c.Bind(form); err != nil {
-		return NewBadRequestError("An error occurred while loading the submitted data.", err)
+	if clone, err := e.App.Settings().Clone(); err == nil {
+		event.OldSettings = clone
+	} else {
+		return e.BadRequestError("", err)
 	}
 
-	event := &core.SettingsUpdateEvent{
-		HttpContext: c,
-		OldSettings: api.app.Settings(),
-		NewSettings: form.Settings,
+	if clone, err := e.App.Settings().Clone(); err == nil {
+		event.NewSettings = clone
+	} else {
+		return e.BadRequestError("", err)
 	}
 
-	// update the settings
-	submitErr := form.Submit(func(next forms.InterceptorNextFunc) forms.InterceptorNextFunc {
-		return func() error {
-			return api.app.OnSettingsBeforeUpdateRequest().Trigger(event, func(e *core.SettingsUpdateEvent) error {
-				if err := next(); err != nil {
-					return NewBadRequestError("An error occurred while submitting the form.", err)
-				}
+	if err := e.BindBody(&event.NewSettings); err != nil {
+		return e.BadRequestError("An error occurred while loading the submitted data.", err)
+	}
 
-				redactedSettings, err := api.app.Settings().RedactClone()
-				if err != nil {
-					return NewBadRequestError("", err)
-				}
-
-				return e.HttpContext.JSON(http.StatusOK, redactedSettings)
-			})
+	return e.App.OnSettingsUpdateRequest().Trigger(event, func(e *core.SettingsUpdateRequestEvent) error {
+		err := e.App.Save(e.NewSettings)
+		if err != nil {
+			return e.BadRequestError("An error occurred while saving the new settings.", err)
 		}
+
+		appSettings, err := e.App.Settings().Clone()
+		if err != nil {
+			return e.InternalServerError("Failed to clone app settings.", err)
+		}
+
+		return e.JSON(http.StatusOK, appSettings)
 	})
-
-	if submitErr == nil {
-		api.app.OnSettingsAfterUpdateRequest().Trigger(event)
-	}
-
-	return submitErr
 }
 
-func (api *settingsApi) testS3(c echo.Context) error {
-	if !api.app.Settings().S3.Enabled {
-		return NewBadRequestError("S3 storage is not enabled.", nil)
-	}
-
-	fs, err := api.app.NewFilesystem()
-	if err != nil {
-		return NewBadRequestError("Failed to initialize the S3 storage. Raw error: \n"+err.Error(), nil)
-	}
-	defer fs.Close()
-
-	testPrefix := "pb_settings_test_" + security.PseudorandomString(5)
-	testFileKey := testPrefix + "/test.txt"
-
-	// try to upload a test file
-	if err := fs.Upload([]byte("test"), testFileKey); err != nil {
-		return NewBadRequestError("Failed to upload a test file. Raw error: \n"+err.Error(), nil)
-	}
-
-	// test prefix deletion (ensures that both bucket list and delete works)
-	if errs := fs.DeletePrefix(testPrefix); len(errs) > 0 {
-		return NewBadRequestError(fmt.Sprintf("Failed to delete a test file. Raw error: %v", errs), nil)
-	}
-
-	return c.NoContent(http.StatusNoContent)
-}
-
-func (api *settingsApi) testEmail(c echo.Context) error {
-	form := forms.NewTestEmailSend(api.app)
+func settingsTestS3(e *core.RequestEvent) error {
+	form := forms.NewTestS3Filesystem(e.App)
 
 	// load request
-	if err := c.Bind(form); err != nil {
-		return NewBadRequestError("An error occurred while loading the submitted data.", err)
+	if err := e.BindBody(form); err != nil {
+		return e.BadRequestError("An error occurred while loading the submitted data.", err)
 	}
 
 	// send
 	if err := form.Submit(); err != nil {
+		// form error
 		if fErr, ok := err.(validation.Errors); ok {
-			// form error
-			return NewBadRequestError("Failed to send the test email.", fErr)
+			return e.BadRequestError("Failed to test the S3 filesystem.", fErr)
 		}
 
 		// mailer error
-		return NewBadRequestError("Failed to send the test email. Raw error: \n"+err.Error(), nil)
+		return e.BadRequestError("Failed to test the S3 filesystem. Raw error: \n"+err.Error(), nil)
 	}
 
-	return c.NoContent(http.StatusNoContent)
+	return e.NoContent(http.StatusNoContent)
+}
+
+func settingsTestEmail(e *core.RequestEvent) error {
+	form := forms.NewTestEmailSend(e.App)
+
+	// load request
+	if err := e.BindBody(form); err != nil {
+		return e.BadRequestError("An error occurred while loading the submitted data.", err)
+	}
+
+	// send
+	if err := form.Submit(); err != nil {
+		// form error
+		if fErr, ok := err.(validation.Errors); ok {
+			return e.BadRequestError("Failed to send the test email.", fErr)
+		}
+
+		// mailer error
+		return e.BadRequestError("Failed to send the test email. Raw error: \n"+err.Error(), nil)
+	}
+
+	return e.NoContent(http.StatusNoContent)
+}
+
+func settingsGenerateAppleClientSecret(e *core.RequestEvent) error {
+	form := forms.NewAppleClientSecretCreate(e.App)
+
+	// load request
+	if err := e.BindBody(form); err != nil {
+		return e.BadRequestError("An error occurred while loading the submitted data.", err)
+	}
+
+	// generate
+	secret, err := form.Submit()
+	if err != nil {
+		// form error
+		if fErr, ok := err.(validation.Errors); ok {
+			return e.BadRequestError("Invalid client secret data.", fErr)
+		}
+
+		// secret generation error
+		return e.BadRequestError("Failed to generate client secret. Raw error: \n"+err.Error(), nil)
+	}
+
+	return e.JSON(http.StatusOK, map[string]string{
+		"secret": secret,
+	})
 }

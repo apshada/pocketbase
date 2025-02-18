@@ -2,64 +2,93 @@ package types_test
 
 import (
 	"database/sql/driver"
+	"encoding/json"
+	"fmt"
 	"testing"
 
 	"github.com/pocketbase/pocketbase/tools/types"
 )
 
-func TestJsonArrayMarshalJSON(t *testing.T) {
+func TestJSONArrayMarshalJSON(t *testing.T) {
 	scenarios := []struct {
-		json     types.JsonArray
+		json     json.Marshaler
 		expected string
 	}{
-		{nil, "[]"},
-		{types.JsonArray{}, `[]`},
-		{types.JsonArray{1, 2, 3}, `[1,2,3]`},
-		{types.JsonArray{"test1", "test2", "test3"}, `["test1","test2","test3"]`},
-		{types.JsonArray{1, "test"}, `[1,"test"]`},
+		{new(types.JSONArray[any]), "[]"},
+		{types.JSONArray[any]{}, `[]`},
+		{types.JSONArray[int]{1, 2, 3}, `[1,2,3]`},
+		{types.JSONArray[string]{"test1", "test2", "test3"}, `["test1","test2","test3"]`},
+		{types.JSONArray[any]{1, "test"}, `[1,"test"]`},
 	}
 
 	for i, s := range scenarios {
-		result, err := s.json.MarshalJSON()
-		if err != nil {
-			t.Errorf("(%d) %v", i, err)
-			continue
-		}
-		if string(result) != s.expected {
-			t.Errorf("(%d) Expected %s, got %s", i, s.expected, string(result))
-		}
+		t.Run(fmt.Sprintf("%d_%#v", i, s.expected), func(t *testing.T) {
+			result, err := s.json.MarshalJSON()
+			if err != nil {
+				t.Fatal(err)
+			}
+
+			if string(result) != s.expected {
+				t.Fatalf("Expected %s, got %s", s.expected, result)
+			}
+		})
 	}
 }
 
-func TestJsonArrayValue(t *testing.T) {
+func TestJSONArrayString(t *testing.T) {
 	scenarios := []struct {
-		json     types.JsonArray
+		json     fmt.Stringer
+		expected string
+	}{
+		{new(types.JSONArray[any]), "[]"},
+		{types.JSONArray[any]{}, `[]`},
+		{types.JSONArray[int]{1, 2, 3}, `[1,2,3]`},
+		{types.JSONArray[string]{"test1", "test2", "test3"}, `["test1","test2","test3"]`},
+		{types.JSONArray[any]{1, "test"}, `[1,"test"]`},
+	}
+
+	for i, s := range scenarios {
+		t.Run(fmt.Sprintf("%d_%#v", i, s.expected), func(t *testing.T) {
+			result := s.json.String()
+
+			if result != s.expected {
+				t.Fatalf("Expected\n%s\ngot\n%s", s.expected, result)
+			}
+		})
+	}
+}
+
+func TestJSONArrayValue(t *testing.T) {
+	scenarios := []struct {
+		json     driver.Valuer
 		expected driver.Value
 	}{
-		{nil, `[]`},
-		{types.JsonArray{}, `[]`},
-		{types.JsonArray{1, 2, 3}, `[1,2,3]`},
-		{types.JsonArray{"test1", "test2", "test3"}, `["test1","test2","test3"]`},
-		{types.JsonArray{1, "test"}, `[1,"test"]`},
+		{new(types.JSONArray[any]), `[]`},
+		{types.JSONArray[any]{}, `[]`},
+		{types.JSONArray[int]{1, 2, 3}, `[1,2,3]`},
+		{types.JSONArray[string]{"test1", "test2", "test3"}, `["test1","test2","test3"]`},
+		{types.JSONArray[any]{1, "test"}, `[1,"test"]`},
 	}
 
 	for i, s := range scenarios {
-		result, err := s.json.Value()
-		if err != nil {
-			t.Errorf("(%d) %v", i, err)
-			continue
-		}
-		if result != s.expected {
-			t.Errorf("(%d) Expected %s, got %v", i, s.expected, result)
-		}
+		t.Run(fmt.Sprintf("%d_%#v", i, s.expected), func(t *testing.T) {
+			result, err := s.json.Value()
+			if err != nil {
+				t.Fatal(err)
+			}
+
+			if result != s.expected {
+				t.Fatalf("Expected %s, got %#v", s.expected, result)
+			}
+		})
 	}
 }
 
-func TestJsonArrayScan(t *testing.T) {
+func TestJSONArrayScan(t *testing.T) {
 	scenarios := []struct {
 		value       any
 		expectError bool
-		expectJson  string
+		expectJSON  string
 	}{
 		{``, false, `[]`},
 		{[]byte{}, false, `[]`},
@@ -77,7 +106,7 @@ func TestJsonArrayScan(t *testing.T) {
 	}
 
 	for i, s := range scenarios {
-		arr := types.JsonArray{}
+		arr := types.JSONArray[any]{}
 		scanErr := arr.Scan(s.value)
 
 		hasErr := scanErr != nil
@@ -88,8 +117,8 @@ func TestJsonArrayScan(t *testing.T) {
 
 		result, _ := arr.MarshalJSON()
 
-		if string(result) != s.expectJson {
-			t.Errorf("(%d) Expected %s, got %v", i, s.expectJson, string(result))
+		if string(result) != s.expectJSON {
+			t.Errorf("(%d) Expected %s, got %v", i, s.expectJSON, string(result))
 		}
 	}
 }
